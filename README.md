@@ -1,1 +1,1 @@
-# class-aware-pruning
+# Class Aware Pruning
