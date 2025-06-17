@@ -103,4 +103,4 @@ def train_model(
             model_path = f"best_model_epoch_{epoch + 1}.pth"
             torch.save(model.state_dict(), model_path)
 
-    print("Training complete.")
+    print("Training complete. Best accuracy achieved:", best_accuracy)
