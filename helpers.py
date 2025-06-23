@@ -104,3 +104,19 @@ def train_model(
             torch.save(model.state_dict(), model_path)
 
     print("Training complete. Best accuracy achieved:", best_accuracy)
+
+
+def get_names_of_conv_layers(model: nn.Module):
+    """Get the names of all Conv2d layers in the model."""
+    conv_layer_names = []
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Conv2d):
+            conv_layer_names.append(name)
+    return conv_layer_names
+
+
+def get_parameter_ratio(model: nn.Module, pruned_model: nn.Module):
+    """Calculate the ratio of parameters in the pruned model to the original model."""
+    original_params = sum(p.numel() for p in model.parameters())
+    pruned_params = sum(p.numel() for p in pruned_model.parameters())
+    return pruned_params / original_params if original_params > 0 else 0

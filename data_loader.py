@@ -1,14 +1,16 @@
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision import datasets, transforms
+from typing import List
 
 
 def get_CIFAR10_dataloaders(
-    train_batch_size,
-    test_batch_size,
-    use_data_Augmentation=True,
-    data_path="./data/cifar",
-    download=False,
-    train_shuffle=True,
+    train_batch_size: int,
+    test_batch_size: int,
+    use_data_Augmentation: bool = True,
+    data_path: str = "./data/cifar",
+    download: bool = False,
+    train_shuffle: bool = True,
+    selected_classes: List[int] = [],
 ):
 
     mean = [0.4940607, 0.4850613, 0.45037037]
@@ -36,6 +38,23 @@ def get_CIFAR10_dataloaders(
     test_data_set = datasets.CIFAR10(
         data_path, transform=test_transform, download=download, train=False
     )
+
+    if selected_classes:
+        train_data_set.data = train_data_set.data[:5000]
+        train_data_set.targets = train_data_set.targets[:5000]
+        indices = [
+            i
+            for i, label in enumerate(train_data_set.targets)
+            if label in selected_classes
+        ]
+        sampler = SubsetRandomSampler(indices)
+        subset_train_data_loader = DataLoader(
+            train_data_set,
+            batch_size=train_batch_size,
+            shuffle=False,
+            sampler=sampler,
+        )
+        return subset_train_data_loader
 
     train_data_loader = DataLoader(
         train_data_set, batch_size=train_batch_size, shuffle=train_shuffle
