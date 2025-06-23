@@ -5,7 +5,12 @@ import copy
 
 
 class StructuredPruner:
-    def __init__(self, model: nn.Module, masks: dict[str, torch.Tensor]):
+    def __init__(
+        self,
+        model: nn.Module,
+        masks: dict[str, torch.Tensor],
+        selected_classes: list[int],
+    ):
         """
         Args:
             model (nn.Module): The model to prune.
@@ -21,6 +26,7 @@ class StructuredPruner:
         """
         self.model = copy.deepcopy(model)
         self.masks = masks
+        self.selected_classes = selected_classes
 
     def prune(self):
         # Symbolically trace the model
@@ -89,6 +95,11 @@ class StructuredPruner:
                         else:
                             user_nodes.extend(list(user.users.keys()))
 
+        # Replace the last layer for classification
+        last_linear = self.model.classifier[-1]
+        new_last_linear = self.replace_last_layer(last_linear)
+        self.model.classifier[-1] = new_last_linear
+
         return self.model
 
     def _adjust_input_channels(self, conv: nn.Conv2d, keep_indices: torch.Tensor):
@@ -137,4 +148,15 @@ class StructuredPruner:
         new_linear.weight.data = linear.weight.data[:, all_keep_indices].clone()
         if linear.bias is not None:
             new_linear.bias.data = linear.bias.data.clone()
+        return new_linear
+
+    def replace_last_layer(self, linear: nn.Linear):
+        new_linear = nn.Linear(
+            in_features=linear.in_features,
+            out_features=len(self.selected_classes),
+            bias=(linear.bias is not None),
+        )
+        new_linear.weight.data = linear.weight.data[self.selected_classes].clone()
+        if linear.bias is not None:
+            new_linear.bias.data = linear.bias.data[self.selected_classes].clone()
         return new_linear

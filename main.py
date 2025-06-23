@@ -50,6 +50,8 @@ def main():
             num_epochs=num_epochs,
         )
 
+    selected_classes = [0, 1, 2]
+
     subset_data_loader = get_CIFAR10_dataloaders(
         train_batch_size=batch_size,
         test_batch_size=batch_size,
@@ -57,13 +59,13 @@ def main():
         data_path="./data/cifar",
         download=True,
         train_shuffle=True,
-        selected_classes=[0, 1],
+        selected_classes=selected_classes,
     )
 
     layer_masks, _ = Compute_layer_mask(
         imgs_dataloader=subset_data_loader,
         model=model,
-        percent=0.05,
+        percent=0.1,
         device=device,
         activation_func=nn.ReLU(),
     )
@@ -74,7 +76,7 @@ def main():
     names_of_conv_layers = names_of_conv_layers[1:]
     masks = {name: layer_masks[i] for i, name in enumerate(names_of_conv_layers)}
 
-    pruner = StructuredPruner(model, masks)
+    pruner = StructuredPruner(model, masks, selected_classes)
     pruned_model = pruner.prune()
     torch.save(pruned_model.state_dict(), "pruned_model.pth")
     print("Model pruned successfully.")
