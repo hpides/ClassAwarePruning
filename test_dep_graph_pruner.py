@@ -3,13 +3,14 @@ from data_loader import get_CIFAR10_dataloaders
 from pruner import DepGraphPruner
 from torchvision import models
 import torch.nn as nn
-from ocap import Compute_layer_mask
+from lrp import get_candidates_to_prune
 from helpers import get_names_of_conv_layers, evaluate_model, get_parameter_ratio
 
 
 def main():
-    device = torch.device("mps" if torch.mps.is_available() else "cpu")
-    batch_size = 256
+    # device = torch.device("mps" if torch.mps.is_available() else "cpu")
+    device = "cpu"
+    batch_size = 512
 
     # Load CIFAR-10 data
     _, test_loader = get_CIFAR10_dataloaders(
@@ -29,7 +30,7 @@ def main():
     model.to(device)
 
     # Get pruning indices
-    selected_classes = [0, 1, 2]
+    selected_classes = [0, 1]
 
     subset_data_loader = get_CIFAR10_dataloaders(
         train_batch_size=batch_size,
@@ -40,21 +41,19 @@ def main():
         train_shuffle=True,
         selected_classes=selected_classes,
     )
-    layer_masks, _ = Compute_layer_mask(
-        imgs_dataloader=subset_data_loader,
+
+    number_of_filters_to_prune = 3000
+    data_iter = iter(subset_data_loader)
+    X, y = next(data_iter)
+
+    indices = get_candidates_to_prune(
         model=model,
-        percent=0.1,
-        device=device,
-        activation_func=nn.ReLU(),
+        num_filters_to_prune=number_of_filters_to_prune,
+        X_test=X.to(device),
+        y_test_true=y.to(device),
     )
 
-    names_of_conv_layers = get_names_of_conv_layers(model)
-    # Skip the first layer (input layer)
-    layer_masks = layer_masks[1:]
-    names_of_conv_layers = names_of_conv_layers[1:]
-    masks = {name: layer_masks[i] for i, name in enumerate(names_of_conv_layers)}
-
-    pruner = DepGraphPruner(model=model, masks=masks)
+    pruner = DepGraphPruner(model=model, indices=indices, device=device)
     pruned_model = pruner.prune()
     pruned_model.to(device)
 
@@ -67,6 +66,8 @@ def main():
         pruned_model, device, test_loader, print_results=True, all_classes=True
     )
     print(f"Parameter ratio after pruning: {get_parameter_ratio(model, pruned_model)}")
+
+    torch.save(pruned_model, "pruned_lrp_model.pth")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,9 @@ import torch
 from torch import nn
 
 
+# This code is from the authors of the paper "OCAP: On-Device Class-Aware Pruning for Personalized Edge DNN Models"
+# with small modifications to fit the current codebase
+# https://github.com/mzd2222/OCAP
 def Compute_layer_mask(imgs_dataloader, model, percent, device, activation_func):
     """
     :argument Calculate masks based on the input image

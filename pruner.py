@@ -164,7 +164,13 @@ class StructuredPruner:
 
 
 class DepGraphPruner:
-    def __init__(self, model: nn.Module, masks: dict[str, torch.Tensor], device="cpu"):
+    def __init__(
+        self,
+        model: nn.Module,
+        masks: dict[str, torch.Tensor] = None,
+        indices=None,
+        device="cpu",
+    ):
         """
         Args:
             model (nn.Module): The model to prune.
@@ -172,7 +178,7 @@ class DepGraphPruner:
                           Example: {'conv1': tensor([1, 0, 1, ...])}
         """
         self.model = copy.deepcopy(model)
-        self.pruning_indices = self._get_pruning_indices(masks)
+        self.pruning_indices = self._get_pruning_indices(masks) if masks else indices
         self.device = device
 
     def prune(self):
