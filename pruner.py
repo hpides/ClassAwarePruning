@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.fx as fx
+import torch_pruning as tp
 import copy
 
 
@@ -160,3 +161,44 @@ class StructuredPruner:
         if linear.bias is not None:
             new_linear.bias.data = linear.bias.data[self.selected_classes].clone()
         return new_linear
+
+
+class DepGraphPruner:
+    def __init__(self, model: nn.Module, masks: dict[str, torch.Tensor], device="cpu"):
+        """
+        Args:
+            model (nn.Module): The model to prune.
+            masks (dict): Mapping from qualified names of Conv2d layers to filter masks.
+                          Example: {'conv1': tensor([1, 0, 1, ...])}
+        """
+        self.model = copy.deepcopy(model)
+        self.pruning_indices = self._get_pruning_indices(masks)
+        self.device = device
+
+    def prune(self):
+        # Build the dependency graph
+        self.model.to(self.device)
+        DG = tp.DependencyGraph().build_dependency(
+            self.model, example_inputs=torch.randn(1, 3, 224, 224).to(self.device)
+        )
+
+        for name, indices in self.pruning_indices.items():
+            # Prune the Conv2d layers
+            group = DG.get_pruning_group(
+                dict(self.model.named_modules())[name],
+                tp.prune_conv_out_channels,
+                idxs=indices,
+            )
+
+            if DG.check_pruning_group(group):  # avoid over-pruning, i.e., channels=0.
+                print(group)
+                group.prune()
+
+        return self.model
+
+    def _get_pruning_indices(self, masks):
+        pruning_indices = {}
+        for name, mask in masks.items():
+            prune_indices = mask.logical_not().nonzero(as_tuple=False).squeeze(1)
+            pruning_indices[name] = prune_indices.tolist()
+        return pruning_indices
