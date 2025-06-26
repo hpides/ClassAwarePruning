@@ -1,6 +1,7 @@
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision import datasets, transforms
 from typing import List
+import random
 
 
 def get_CIFAR10_dataloaders(
@@ -11,6 +12,7 @@ def get_CIFAR10_dataloaders(
     download: bool = False,
     train_shuffle: bool = True,
     selected_classes: List[int] = [],
+    num_pruning_samples: int = 512,
 ):
 
     mean = [0.4940607, 0.4850613, 0.45037037]
@@ -40,13 +42,15 @@ def get_CIFAR10_dataloaders(
     )
 
     if selected_classes:
-        train_data_set.data = train_data_set.data[:5000]
-        train_data_set.targets = train_data_set.targets[:5000]
+        train_data_set.data = train_data_set.data
+        train_data_set.targets = train_data_set.targets
         indices = [
             i
             for i, label in enumerate(train_data_set.targets)
             if label in selected_classes
         ]
+        random.shuffle(indices)  # Shuffle to get a random subset
+        indices = indices[:num_pruning_samples]
         sampler = SubsetRandomSampler(indices)
         subset_train_data_loader = DataLoader(
             train_data_set,

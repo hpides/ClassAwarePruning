@@ -1,0 +1,36 @@
+import torch
+import torch.nn as nn
+from torchvision import models
+
+
+def get_model(model_name: str, pretrained: bool, num_classes: int = 10) -> nn.Module:
+    """
+    Factory function to get a model by name.
+
+    Args:
+        model_name (str): Name of the model.
+        num_classes (int): Number of output classes.
+
+    Returns:
+        nn.Module: The model instance.
+    """
+
+    models_dict = {
+        "vgg16": models.vgg16,
+        "resnet18": models.resnet18,
+    }
+
+    if model_name not in models_dict:
+        raise ValueError(
+            f"Model {model_name} is not supported. Supported models: {list(models_dict.keys())}"
+        )
+
+    if num_classes == 1000:
+        model = models_dict[model_name](pretrained=pretrained)
+    else:
+        if model_name == "vgg16":
+            model.classifier[6] = nn.Linear(4096, num_classes)
+        elif model_name == "resnet18":
+            model = nn.Linear(512, num_classes)
+
+    return model

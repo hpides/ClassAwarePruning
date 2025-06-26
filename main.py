@@ -1,44 +1,47 @@
 import torch
-import os
 from torch import nn
+import hydra
+from omegaconf import DictConfig
 from data_loader import get_CIFAR10_dataloaders
 from helpers import (
     train_model,
     evaluate_model,
     get_names_of_conv_layers,
     get_parameter_ratio,
+    get_optimizer,
 )
-from torchvision import models
 from pruner import StructuredPruner
 from ocap import Compute_layer_mask
+from models import get_model
 
 
-def main():
+@hydra.main(config_path="conf", config_name="config", version_base=None)
+def main(cfg: DictConfig):
     device = torch.device("mps" if torch.mps.is_available() else "cpu")
-    batch_size = 256
+
+    if cfg.dataset.name != "CIFAR10":
+        raise ValueError(
+            f"Dataset {cfg.dataset.name} is not supported. Supported datasets: CIFAR10"
+        )
 
     train_loader, test_loader = get_CIFAR10_dataloaders(
-        train_batch_size=batch_size,
-        test_batch_size=batch_size,
+        train_batch_size=cfg.batch_size_train,
+        test_batch_size=cfg.batch_size_test,
         use_data_Augmentation=True,
-        data_path="./data/cifar",
         download=True,
         train_shuffle=True,
     )
 
-    if os.path.exists("best_model_epoch_18.pth"):
-        weights = torch.load("best_model_epoch_18.pth", weights_only=True)
-        model = models.vgg16()
-        model.classifier[6] = nn.Linear(4096, 10)
-        model.load_state_dict(weights)
-        model.to(device)
-    else:
-        model = models.vgg16(pretrained=True)  # Load a pre-trained VGG16 model
-        model.classifier[6] = nn.Linear(4096, 10)  # Modify the last layer for CIFAR-10
-        model.to(device)
+    model = get_model(
+        cfg.model.name, pretrained=True, num_classes=cfg.dataset.num_classes
+    )
+
+    if cfg.training.train:
         criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        num_epochs = 20
+        optimizer = get_optimizer(
+            cfg.training.optimizer, model, cfg.training.lr, cfg.training.weight_decay
+        )
+        model.to(device)
 
         train_model(
             model=model,
@@ -47,19 +50,22 @@ def main():
             criterion=criterion,
             optimizer=optimizer,
             device=device,
-            num_epochs=num_epochs,
+            num_epochs=cfg.training.epochs,
         )
-
-    selected_classes = [0, 1, 2]
+    else:
+        weights = torch.load(cfg.model.pretrained_weights_path, weights_only=True)
+        model.load_state_dict(weights)
+        model.to(device)
 
     subset_data_loader = get_CIFAR10_dataloaders(
-        train_batch_size=batch_size,
-        test_batch_size=batch_size,
+        train_batch_size=cfg.training.train_batch_size,
+        test_batch_size=cfg.training.test_batch_size,
         use_data_Augmentation=False,
         data_path="./data/cifar",
         download=True,
         train_shuffle=True,
-        selected_classes=selected_classes,
+        selected_classes=cfg.selected_classes,
+        num_pruning_samples=cfg.num_pruning_samples,
     )
 
     layer_masks, _ = Compute_layer_mask(
@@ -76,7 +82,7 @@ def main():
     names_of_conv_layers = names_of_conv_layers[1:]
     masks = {name: layer_masks[i] for i, name in enumerate(names_of_conv_layers)}
 
-    pruner = StructuredPruner(model, masks, selected_classes)
+    pruner = StructuredPruner(model, masks, cfg.selected_classes)
     pruned_model = pruner.prune()
     torch.save(pruned_model.state_dict(), "pruned_model.pth")
     print("Model pruned successfully.")

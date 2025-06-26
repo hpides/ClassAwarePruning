@@ -197,7 +197,6 @@ class DepGraphPruner:
             )
 
             if DG.check_pruning_group(group):  # avoid over-pruning, i.e., channels=0.
-                print(group)
                 group.prune()
 
         return self.model

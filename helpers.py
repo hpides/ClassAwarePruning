@@ -106,6 +106,17 @@ def train_model(
     print("Training complete. Best accuracy achieved:", best_accuracy)
 
 
+def get_optimizer(name: str, model: nn.Module, lr: float, weight_decay: float = 0.0):
+    if name == "adam":
+        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif name == "sgd":
+        return torch.optim.SGD(
+            model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay
+        )
+    else:
+        raise ValueError(f"Unsupported optimizer: {name}")
+
+
 def get_names_of_conv_layers(model: nn.Module):
     """Get the names of all Conv2d layers in the model."""
     conv_layer_names = []
