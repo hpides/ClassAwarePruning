@@ -314,7 +314,7 @@ def Linear(module, R, lrp_var=None, param=None):
         SA = alpha * R / ZA
         SB = beta * R / ZB
 
-        Rn = X * (self.gradprop_linear(VP, SA) + self.gradprop_linear(VN, SB))
+        Rn = X * (gradprop_linear(VP, SA) + gradprop_linear(VN, SB))
 
         return Rn
 

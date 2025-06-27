@@ -84,6 +84,7 @@ def main(cfg: DictConfig):
 
     # Evaluate the model before and after pruning
     print("Before pruning:")
+    model.to(device)
     evaluate_model(model, device, test_loader, print_results=True, all_classes=True)
     print("After pruning:")
     evaluate_model(

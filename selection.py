@@ -3,6 +3,7 @@ import torch
 import random
 from abc import ABC, abstractmethod
 from ocap import Compute_layer_mask
+from lrp import get_candidates_to_prune
 from helpers import (
     get_names_of_conv_layers,
     get_activation_function,
@@ -34,6 +35,10 @@ def get_selector(
             activation_func=selector_config.activation_func,
             device=device,
             skip_first_layer=selector_config.skip_first_layer,
+        )
+    elif selector_config.name == "lrp":
+        return LRPPruning(
+            num_filters=selector_config.num_filters, data_loader=data_loader
         )
 
 
@@ -94,5 +99,29 @@ class OCAP(PruningSelection):
             names_of_conv_layers = names_of_conv_layers[1:]
         masks = {name: layer_masks[i] for i, name in enumerate(names_of_conv_layers)}
         indices = get_pruning_indices(masks)
+
+        return indices
+
+
+class LRPPruning(PruningSelection):
+    def __init__(
+        self, num_filters: int, data_loader: torch.utils.data.DataLoader, device="cpu"
+    ):
+        super().__init__()
+        self.num_filters = num_filters
+        self.data_loader = data_loader
+        self.device = device
+
+    def select(self, model: nn.Module):
+        """Selects filters to prune based on the LAP Pruning method."""
+        data_iter = iter(self.data_loader)
+        X, y = next(data_iter)
+
+        indices = get_candidates_to_prune(
+            model=model.to(self.device),
+            num_filters_to_prune=self.num_filters,
+            X_test=X.to(self.device),
+            y_test_true=y.to(self.device),
+        )
 
         return indices
