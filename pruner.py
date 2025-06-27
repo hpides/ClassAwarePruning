@@ -167,8 +167,9 @@ class DepGraphPruner:
     def __init__(
         self,
         model: nn.Module,
-        masks: dict[str, torch.Tensor] = None,
-        indices=None,
+        indices,
+        replace_last_layer=True,
+        selected_classes=[],
         device="cpu",
     ):
         """
@@ -178,7 +179,9 @@ class DepGraphPruner:
                           Example: {'conv1': tensor([1, 0, 1, ...])}
         """
         self.model = copy.deepcopy(model)
-        self.pruning_indices = self._get_pruning_indices(masks) if masks else indices
+        self.pruning_indices = indices
+        self.replace_last_layer = replace_last_layer
+        self.selected_classes = selected_classes
         self.device = device
 
     def prune(self):
@@ -199,11 +202,20 @@ class DepGraphPruner:
             if DG.check_pruning_group(group):  # avoid over-pruning, i.e., channels=0.
                 group.prune()
 
+        if self.replace_last_layer and self.selected_classes:
+            self._replace_last_layer()
+
         return self.model
 
-    def _get_pruning_indices(self, masks):
-        pruning_indices = {}
-        for name, mask in masks.items():
-            prune_indices = mask.logical_not().nonzero(as_tuple=False).squeeze(1)
-            pruning_indices[name] = prune_indices.tolist()
-        return pruning_indices
+    def _replace_last_layer(self):
+        last_linear = self.model.classifier[-1]
+        new_linear = nn.Linear(
+            in_features=last_linear.in_features,
+            out_features=len(self.selected_classes),
+            bias=(last_linear.bias is not None),
+        )
+        new_linear.weight.data = last_linear.weight.data[self.selected_classes].clone()
+        if last_linear.bias is not None:
+            new_linear.bias.data = last_linear.bias.data[self.selected_classes].clone()
+
+        self.model.classifier[-1] = new_linear

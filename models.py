@@ -25,9 +25,8 @@ def get_model(model_name: str, pretrained: bool, num_classes: int = 10) -> nn.Mo
             f"Model {model_name} is not supported. Supported models: {list(models_dict.keys())}"
         )
 
-    if num_classes == 1000:
-        model = models_dict[model_name](pretrained=pretrained)
-    else:
+    model = models_dict[model_name](pretrained=pretrained)
+    if num_classes != 1000:
         if model_name == "vgg16":
             model.classifier[6] = nn.Linear(4096, num_classes)
         elif model_name == "resnet18":

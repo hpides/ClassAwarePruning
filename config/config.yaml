@@ -6,6 +6,7 @@ defaults:
 
 selected_classes: [0,1]
 num_pruning_samples: 512
+replace_last_layer: true
 
 training:
   train: false

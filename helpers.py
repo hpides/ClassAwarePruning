@@ -117,6 +117,20 @@ def get_optimizer(name: str, model: nn.Module, lr: float, weight_decay: float = 
         raise ValueError(f"Unsupported optimizer: {name}")
 
 
+def get_activation_function(name: str):
+    """Get the activation function by name."""
+    if name == "relu":
+        return nn.ReLU()
+    elif name == "leaky_relu":
+        return nn.LeakyReLU(negative_slope=0.01)
+    elif name == "sigmoid":
+        return nn.Sigmoid()
+    elif name == "tanh":
+        return nn.Tanh()
+    else:
+        raise ValueError(f"Unsupported activation function: {name}")
+
+
 def get_names_of_conv_layers(model: nn.Module):
     """Get the names of all Conv2d layers in the model."""
     conv_layer_names = []
@@ -131,3 +145,11 @@ def get_parameter_ratio(model: nn.Module, pruned_model: nn.Module):
     original_params = sum(p.numel() for p in model.parameters())
     pruned_params = sum(p.numel() for p in pruned_model.parameters())
     return pruned_params / original_params if original_params > 0 else 0
+
+
+def get_pruning_indices(masks):
+    pruning_indices = {}
+    for name, mask in masks.items():
+        prune_indices = mask.logical_not().nonzero(as_tuple=False).squeeze(1)
+        pruning_indices[name] = prune_indices.tolist()
+    return pruning_indices
