@@ -109,6 +109,8 @@ def train_model(
 def get_optimizer(name: str, model: nn.Module, lr: float, weight_decay: float = 0.0):
     if name == "adam":
         return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif name == "adamw":
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     elif name == "sgd":
         return torch.optim.SGD(
             model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay

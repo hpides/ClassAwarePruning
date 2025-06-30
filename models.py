@@ -30,6 +30,6 @@ def get_model(model_name: str, pretrained: bool, num_classes: int = 10) -> nn.Mo
         if model_name == "vgg16":
             model.classifier[6] = nn.Linear(4096, num_classes)
         elif model_name == "resnet18":
-            model = nn.Linear(512, num_classes)
+            model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     return model

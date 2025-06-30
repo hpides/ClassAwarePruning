@@ -1,6 +1,6 @@
 defaults:
   - pruning: ocap  
-  - model: vgg16
+  - model: resnet18
   - dataset: cifar10
   - _self_
 
@@ -9,13 +9,13 @@ num_pruning_samples: 512
 replace_last_layer: true
 
 training:
-  train: false
+  train: true
   batch_size_train: 256
   batch_size_test: 256
   lr: 0.001
-  weight_decay: 0
-  epochs: 20
-  optimizer: adam
+  weight_decay: 1e-5
+  epochs: 50
+  optimizer: adamw
 
 
 

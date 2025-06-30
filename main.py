@@ -16,14 +16,19 @@ from models import get_model
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: DictConfig):
-    device = torch.device("mps" if torch.mps.is_available() else "cpu")
-
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else
+        "mps" if torch.backends.mps.is_available() else
+        "cpu"
+    )
+    print(f"Using device: {device}")
+    
     train_loader, test_loader = get_CIFAR10_dataloaders(
         train_batch_size=cfg.training.batch_size_train,
         test_batch_size=cfg.training.batch_size_test,
         use_data_Augmentation=True,
         download=True,
-        train_shuffle=True,
+        train_shuffle=True
     )
 
     model = get_model(
