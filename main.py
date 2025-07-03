@@ -9,7 +9,7 @@ from helpers import (
     get_parameter_ratio,
     get_optimizer,
 )
-from pruner import DepGraphPruner
+from pruner import DepGraphPruner, StructuredPruner
 from selection import get_selector
 from models import get_model
 
@@ -53,7 +53,7 @@ def main(cfg: DictConfig):
             num_epochs=cfg.training.epochs,
         )
     else:
-        weights = torch.load(cfg.model.pretrained_weights_path, weights_only=True)
+        weights = torch.load(cfg.model.pretrained_weights_path, weights_only=True, map_location=device)
         model.load_state_dict(weights)
         model.to(device)
 
@@ -72,16 +72,17 @@ def main(cfg: DictConfig):
     selector = get_selector(
         selector_config=cfg.pruning, data_loader=subset_data_loader, device=device
     )
-    indices = selector.select(model=model)
+    indices, masks = selector.select(model=model)
 
     # Prune the model
-    pruner = DepGraphPruner(
-        model=model,
-        indices=indices,
-        replace_last_layer=cfg.replace_last_layer,
-        selected_classes=cfg.selected_classes,
-        device=device,
-    )
+    # pruner = DepGraphPruner(
+    #     model=model,
+    #     indices=indices,
+    #     replace_last_layer=cfg.replace_last_layer,
+    #     selected_classes=cfg.selected_classes,
+    #     device=device,
+    # )
+    pruner = StructuredPruner(model=model, masks=masks, selected_classes=cfg.selected_classes)
 
     pruned_model = pruner.prune()
     torch.save(pruned_model.state_dict(), "pruned_model.pth")

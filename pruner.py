@@ -39,7 +39,6 @@ class StructuredPruner:
                 conv_name = node.target
                 if conv_name not in self.masks:
                     continue  # Skip unmasked layers
-
                 old_conv = dict(self.model.named_modules())[conv_name]
                 mask = self.masks[conv_name]
                 keep_indices = mask.nonzero(as_tuple=False).squeeze(1)
@@ -83,9 +82,8 @@ class StructuredPruner:
                             self._set_module_by_qualified_name(
                                 self.model, user.target, new_bn
                             )
-                        elif (
-                            isinstance(next_mod, nn.Linear)
-                            and user.target == "classifier.0"
+                        elif isinstance(next_mod, nn.Linear) and (
+                            user.target == "classifier.0" or user.target == "fc"
                         ):
                             new_linear = self._adjust_first_linear_layer(
                                 next_mod, keep_indices
@@ -97,9 +95,7 @@ class StructuredPruner:
                             user_nodes.extend(list(user.users.keys()))
 
         # Replace the last layer for classification
-        last_linear = self.model.classifier[-1]
-        new_last_linear = self.replace_last_layer(last_linear)
-        self.model.classifier[-1] = new_last_linear
+        self._replace_last_layer()
 
         return self.model
 
@@ -151,16 +147,25 @@ class StructuredPruner:
             new_linear.bias.data = linear.bias.data.clone()
         return new_linear
 
-    def replace_last_layer(self, linear: nn.Linear):
+    def _replace_last_layer(self):
+        layer_name, last_linear = list(self.model.named_modules())[-1]
         new_linear = nn.Linear(
-            in_features=linear.in_features,
+            in_features=last_linear.in_features,
             out_features=len(self.selected_classes),
-            bias=(linear.bias is not None),
+            bias=(last_linear.bias is not None),
         )
-        new_linear.weight.data = linear.weight.data[self.selected_classes].clone()
-        if linear.bias is not None:
-            new_linear.bias.data = linear.bias.data[self.selected_classes].clone()
-        return new_linear
+        new_linear.weight.data = last_linear.weight.data[self.selected_classes].clone()
+        if last_linear.bias is not None:
+            new_linear.bias.data = last_linear.bias.data[self.selected_classes].clone()
+
+        self._replace_module(layer_name, new_linear)
+
+    def _replace_module(self, module_name, new_module):
+        parts = module_name.split(".")
+        parent = self.model
+        for name in parts[:-1]:
+            parent = getattr(parent, name)
+        setattr(parent, parts[-1], new_module)
 
 
 class DepGraphPruner:
@@ -208,7 +213,7 @@ class DepGraphPruner:
         return self.model
 
     def _replace_last_layer(self):
-        last_linear = self.model.classifier[-1]
+        layer_name, last_linear = list(self.model.named_modules())[-1]
         new_linear = nn.Linear(
             in_features=last_linear.in_features,
             out_features=len(self.selected_classes),
@@ -218,4 +223,11 @@ class DepGraphPruner:
         if last_linear.bias is not None:
             new_linear.bias.data = last_linear.bias.data[self.selected_classes].clone()
 
-        self.model.classifier[-1] = new_linear
+        self._replace_module(layer_name, new_linear)
+
+    def _replace_module(self, module_name, new_module):
+        parts = module_name.split(".")
+        parent = self.model
+        for name in parts[:-1]:
+            parent = getattr(parent, name)
+        setattr(parent, parts[-1], new_module)

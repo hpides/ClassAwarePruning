@@ -1,1 +1,2 @@
 name: resnet18
+pretrained_weights_path: best_model_epoch_42.pth

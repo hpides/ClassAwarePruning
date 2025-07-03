@@ -37,11 +37,12 @@ def Compute_layer_mask(
         activations.clear()
         new_activations = []
 
-        for module in model.features.modules():
-            if isinstance(module, nn.ReLU):
-                hook = module.register_forward_hook(mask_activation_hook)
+        for index, module in enumerate(model.modules()):
+            if isinstance(module, nn.Conv2d):
+                next_module = list(model.modules())[index + 1]
+                hook = next_module.register_forward_hook(mask_activation_hook)
                 hooks.append(hook)
-
+      
         batch_times = 0
         for imgs, _ in imgs_dataloader:
             imgs = imgs.to(device)
@@ -78,7 +79,7 @@ def Compute_layer_mask(
             for idx, imgs_activations_score in enumerate(layer_activations_score):
                 # [c]
                 sorted_tensor, _ = torch.sort(imgs_activations_score)
-                threshold_index = int(len(sorted_tensor) * percent)
+                threshold_index = min(int(len(sorted_tensor) * percent), len(sorted_tensor) - 1)
                 threshold = sorted_tensor[threshold_index]
                 one_img_mask = imgs_activations_score.gt(threshold)
                 layer_masks[idx] = one_img_mask

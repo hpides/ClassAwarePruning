@@ -3,6 +3,13 @@ data/
 
 # Outputs
 outputs/
+*.out
+
+# Weights
+*.pth
+
+# Vs Code workspace files
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

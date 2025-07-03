@@ -100,7 +100,7 @@ class OCAP(PruningSelection):
         masks = {name: layer_masks[i] for i, name in enumerate(names_of_conv_layers)}
         indices = get_pruning_indices(masks)
 
-        return indices
+        return indices, masks
 
 
 class LRPPruning(PruningSelection):
