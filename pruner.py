@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.fx as fx
 import torch_pruning as tp
 import copy
+from torchvision.models.resnet import BasicBlock, Bottleneck
 
 
 class StructuredPruner:
@@ -32,13 +33,12 @@ class StructuredPruner:
     def prune(self):
         # Symbolically trace the model
         traced = fx.symbolic_trace(self.model)
-
         modules = dict(traced.named_modules())
         for node in traced.graph.nodes:
             if node.op == "call_module" and isinstance(modules[node.target], nn.Conv2d):
                 conv_name = node.target
-                if conv_name not in self.masks:
-                    continue  # Skip unmasked layers
+                if conv_name not in self.masks or "downsample" in conv_name:
+                    continue  # Skip unmasked layers and downsample layers
                 old_conv = dict(self.model.named_modules())[conv_name]
                 mask = self.masks[conv_name]
                 keep_indices = mask.nonzero(as_tuple=False).squeeze(1)
@@ -63,13 +63,37 @@ class StructuredPruner:
 
                 # Adjust the next layers consuming this output
                 user_nodes = list(node.users)
+                parent_block = self._find_parent_block(conv_name)
+                last_user = None
                 while user_nodes:
                     user = user_nodes.pop(0)
                     if user.op == "call_module" or user.op == "call_function":
                         if user.op == "call_module":
                             next_mod = modules[user.target]
+                            # In case of ResNet, don't modify layers in the next block
+                            if parent_block and (
+                                not user.target.split(".")[:-1]
+                                == conv_name.split(".")[:-1]
+                            ):
+                                continue
+                        elif user.op == "call_function" and "add" in user.name:
+                            if parent_block:
+                                # Add zeros to avoid dimension mismatch is addition with shortcut
+                                last_user_name = last_user.target.split(".")[-1]
+                                zero_intertion_module = ZeroInsertion(
+                                    keep_indices, old_conv.out_channels
+                                )
+                                combined_module = nn.Sequential(
+                                    getattr(parent_block, last_user_name),
+                                    zero_intertion_module,
+                                )
+                                parent_block.__setattr__(
+                                    last_user_name, combined_module
+                                )
+                                continue
                         else:
                             next_mod = None
+
                         if isinstance(next_mod, nn.Conv2d):
                             updated = self._adjust_input_channels(
                                 next_mod, keep_indices
@@ -82,6 +106,8 @@ class StructuredPruner:
                             self._set_module_by_qualified_name(
                                 self.model, user.target, new_bn
                             )
+                            user_nodes.extend(list(user.users.keys()))
+                            last_user = user
                         elif isinstance(next_mod, nn.Linear) and (
                             user.target == "classifier.0" or user.target == "fc"
                         ):
@@ -93,6 +119,7 @@ class StructuredPruner:
                             )
                         else:
                             user_nodes.extend(list(user.users.keys()))
+                            last_user = user
 
         # Replace the last layer for classification
         self._replace_last_layer()
@@ -130,6 +157,16 @@ class StructuredPruner:
         for p in parts[:-1]:
             root = getattr(root, p)
         setattr(root, parts[-1], new_module)
+
+    def _find_parent_block(self, name: str):
+        parts = name.split(".")
+        root = self.model
+        for p in parts[:-1]:
+            root = getattr(root, p)
+        if isinstance(root, BasicBlock) or isinstance(root, Bottleneck):
+            return root
+        else:
+            return None
 
     def _adjust_first_linear_layer(self, linear: nn.Linear, keep_indices: torch.Tensor):
         # W.shape = (out_channels, in_channels)
@@ -231,3 +268,24 @@ class DepGraphPruner:
         for name in parts[:-1]:
             parent = getattr(parent, name)
         setattr(parent, parts[-1], new_module)
+
+
+class ZeroInsertion(nn.Module):
+
+    def __init__(self, indices: torch.Tensor, out_features: int) -> None:
+        super().__init__()
+        self.indices = indices
+        self.out_features = out_features
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        device = input.device
+        output_shape = [
+            input.shape[0],
+            self.out_features,
+            input.shape[2],
+            input.shape[3],
+        ]
+        output = torch.zeros(output_shape, dtype=input.dtype)
+        output = output.to(device)
+        output[:, self.indices] = input
+        return output
