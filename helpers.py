@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 
@@ -9,6 +10,7 @@ def evaluate_model(
     test_loader: DataLoader,
     print_results: bool = True,
     all_classes: bool = False,
+    log_results: bool = False,
 ):
     """Function to evaluate the model."""
     model.eval()
@@ -35,16 +37,17 @@ def evaluate_model(
     if print_results:
         print(f"Accuracy of the model on the test set: {accuracy:.2f}%")
 
+    class_accuracies = []
     if all_classes and print_results:
         for i in range(10):
             if class_total[i] > 0:
-                print(
-                    f"Accuracy of class {i}: {100 * class_correct[i] / class_total[i]:.2f}%"
-                )
+                accuracy_i = 100 * class_correct[i] / class_total[i]
+                class_accuracies.append(accuracy_i)
+                print(f"Accuracy of class {i}: {accuracy_i:.2f}%")
             else:
                 print(f"Class {i} has no samples in the test set.")
 
-    return accuracy
+    return accuracy, class_accuracies
 
 
 def train_model(
@@ -156,3 +159,36 @@ def get_pruning_indices(masks):
         prune_indices = mask.logical_not().nonzero(as_tuple=False).squeeze(1)
         pruning_indices[name] = prune_indices.tolist()
     return pruning_indices
+
+
+def get_pruning_masks(indices: dict, model: nn.Module):
+    """Convert pruning indices to masks."""
+    masks = {}
+    for name, prune_indices in indices.items():
+        layer = dict(model.named_modules())[name]
+        mask = torch.ones(layer.out_channels, dtype=torch.bool)
+        mask[prune_indices] = False
+        masks[name] = mask
+    return masks
+
+
+def plot_accuracies(original_accuracies, pruned_accuracies, model_name):
+    # Plot the accuracies of the different classes before and after pruning stacked in the same plot
+    plt.figure(figsize=(10, 6))
+    x = range(len(original_accuracies))
+    plt.bar(x, original_accuracies, width=0.4, label="Original", align="center")
+    plt.bar(
+        [i + 0.4 for i in x],
+        pruned_accuracies,
+        width=0.4,
+        label="Pruned",
+        align="center",
+    )
+    plt.xlabel("Classes")
+    plt.ylabel("Accuracy (%)")
+    plt.title(f"Class-wise Accuracy Comparison for {model_name}")
+    plt.xticks([i + 0.2 for i in x], [str(i) for i in range(len(original_accuracies))])
+    plt.legend()
+    plt.grid(axis="y")
+    plt.tight_layout()
+    plt.savefig(f"{model_name}_accuracy_comparison.png")

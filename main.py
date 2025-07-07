@@ -1,21 +1,28 @@
 import torch
 from torch import nn
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from data_loader import get_CIFAR10_dataloaders
 from helpers import (
     train_model,
     evaluate_model,
     get_parameter_ratio,
     get_optimizer,
+    plot_accuracies,
+    get_pruning_masks,
 )
 from pruner import DepGraphPruner, StructuredPruner
 from selection import get_selector
 from models import get_model
+import wandb
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: DictConfig):
+    if cfg.log_results:
+        wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
+        wandb.init(project="ClassAwarePruning", entity="smilla-fox", config=wandb_cfg)
+
     device = torch.device(
         "cuda"
         if torch.cuda.is_available()
@@ -75,16 +82,9 @@ def main(cfg: DictConfig):
     selector = get_selector(
         selector_config=cfg.pruning, data_loader=subset_data_loader, device=device
     )
-    indices, masks = selector.select(model=model)
+    indices = selector.select(model=model)
+    masks = get_pruning_masks(indices, model)
 
-    # Prune the model
-    # pruner = DepGraphPruner(
-    #     model=model,
-    #     indices=indices,
-    #     replace_last_layer=cfg.replace_last_layer,
-    #     selected_classes=cfg.selected_classes,
-    #     device=device,
-    # )
     pruner = StructuredPruner(
         model=model, masks=masks, selected_classes=cfg.selected_classes
     )
@@ -96,12 +96,27 @@ def main(cfg: DictConfig):
     # Evaluate the model before and after pruning
     print("Before pruning:")
     model.to(device)
-    evaluate_model(model, device, test_loader, print_results=True, all_classes=True)
+    pruned_model.to(device)
+    _, class_accuracies_original = evaluate_model(
+        model, device, test_loader, print_results=True, all_classes=True
+    )
     print("After pruning:")
-    evaluate_model(
+    _, class_accuracies_pruned = evaluate_model(
         pruned_model, device, test_loader, print_results=True, all_classes=True
     )
+
+    if cfg.log_results:
+        wandb.log(
+            {
+                "original_class_accuracies": class_accuracies_original,
+                "pruned_class_accuracies": class_accuracies_pruned,
+            }
+        )
+    plot_accuracies(class_accuracies_original, class_accuracies_pruned, cfg.model.name)
     print(f"Parameter ratio after pruning: {get_parameter_ratio(model, pruned_model)}")
+
+    if cfg.log_results:
+        wandb.finish()
 
 
 if __name__ == "__main__":

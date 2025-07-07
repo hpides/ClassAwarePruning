@@ -1,12 +1,14 @@
 defaults:
   - pruning: ocap  
-  - model: resnet18
+  - model: vgg16
   - dataset: cifar10
   - _self_
 
-selected_classes: [0,1]
+selected_classes: [0,1,2,3]
 num_pruning_samples: 512
 replace_last_layer: true
+log_results: false
+run_name: null
 
 training:
   train: false
