@@ -17,6 +17,8 @@ def get_model(model_name: str, pretrained: bool, num_classes: int = 10) -> nn.Mo
     models_dict = {
         "vgg16": models.vgg16,
         "resnet18": models.resnet18,
+        "resnet50": models.resnet50,
+        "mobilenetv2": models.mobilenet_v2,
     }
 
     if model_name not in models_dict:

@@ -1,0 +1,2 @@
+name: resnet50
+pretrained_weights_path: resnet50.pth

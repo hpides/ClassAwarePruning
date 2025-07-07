@@ -17,18 +17,18 @@ from models import get_model
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: DictConfig):
     device = torch.device(
-        "cuda" if torch.cuda.is_available() else
-        "mps" if torch.backends.mps.is_available() else
-        "cpu"
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
     )
     print(f"Using device: {device}")
-    
+
     train_loader, test_loader = get_CIFAR10_dataloaders(
         train_batch_size=cfg.training.batch_size_train,
         test_batch_size=cfg.training.batch_size_test,
         use_data_Augmentation=True,
         download=True,
-        train_shuffle=True
+        train_shuffle=True,
     )
 
     model = get_model(
@@ -45,6 +45,7 @@ def main(cfg: DictConfig):
 
         train_model(
             model=model,
+            model_name=cfg.model.name,
             train_loader=train_loader,
             test_loader=test_loader,
             criterion=criterion,
@@ -53,7 +54,9 @@ def main(cfg: DictConfig):
             num_epochs=cfg.training.epochs,
         )
     else:
-        weights = torch.load(cfg.model.pretrained_weights_path, weights_only=True, map_location=device)
+        weights = torch.load(
+            cfg.model.pretrained_weights_path, weights_only=True, map_location=device
+        )
         model.load_state_dict(weights)
         model.to(device)
 
@@ -82,7 +85,9 @@ def main(cfg: DictConfig):
     #     selected_classes=cfg.selected_classes,
     #     device=device,
     # )
-    pruner = StructuredPruner(model=model, masks=masks, selected_classes=cfg.selected_classes)
+    pruner = StructuredPruner(
+        model=model, masks=masks, selected_classes=cfg.selected_classes
+    )
 
     pruned_model = pruner.prune()
     torch.save(pruned_model.state_dict(), "pruned_model.pth")

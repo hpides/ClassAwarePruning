@@ -49,6 +49,7 @@ def evaluate_model(
 
 def train_model(
     model: nn.Module,
+    model_name: str,
     train_loader: DataLoader,
     test_loader: DataLoader,
     criterion: nn.Module,
@@ -100,7 +101,7 @@ def train_model(
         if (epoch + 1) >= 10 and test_accuracy > best_accuracy:
             print(f"Saving model with improved accuracy: {test_accuracy:.2f}%")
             best_accuracy = test_accuracy
-            model_path = f"best_model_epoch_{epoch + 1}.pth"
+            model_path = f"{model_name}_best_model_epoch_{epoch + 1}.pth"
             torch.save(model.state_dict(), model_path)
 
     print("Training complete. Best accuracy achieved:", best_accuracy)
