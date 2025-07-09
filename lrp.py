@@ -1,27 +1,98 @@
 import torch
 from heapq import nsmallest
 from operator import itemgetter
+from resnet_kuangliu import ResNet18_kuangliu_c
+from torchvision.models import ResNet
+from torch.autograd import Variable
+import lrp_utils
 import torch.nn as nn
 import copy
 
 PYTORCH_ENABLE_MPS_FALLBACK = 1
+EXTREMELY_HIGH_VALUE = 99999999
 
 # This code is from the authors of the paper "Pruning by Explaining: A Novel Criterion for  Deep Neural Network Pruning"
 # with small modifications to fit the current codebase
 # https://github.com/seulkiyeom/LRP_Pruning_toy_example
 
+lrp_layer2method = {
+    "nn.ReLU": lrp_utils.relu_wrapper_fct,
+    "nn.BatchNorm2d": lrp_utils.relu_wrapper_fct,
+    "nn.Conv2d": lrp_utils.conv2d_beta0_wrapper_fct,
+    "nn.Linear": lrp_utils.linearlayer_eps_wrapper_fct,
+    "nn.AdaptiveAvgPool2d": lrp_utils.adaptiveavgpool2d_wrapper_fct,
+    "nn.MaxPool2d": lrp_utils.maxpool2d_wrapper_fct,
+    "sum_stacked2": lrp_utils.eltwisesum_stacked2_eps_wrapper_fct,
+}
+
 
 def get_candidates_to_prune(model, num_filters_to_prune, X_test, y_test_true):
 
-    pruner = FilterPruner(model)
-    output = pruner.forward_lrp(X_test)
-    T = torch.zeros_like(output)
-    for ii in range(y_test_true.size(0)):
-        T[ii, y_test_true[ii]] = 1.0
-    pruner.backward_lrp(output * T)
+    lrp_model = copy.deepcopy(model)
+    if isinstance(model, ResNet):
+        wrapper_model = ResNet18_kuangliu_c()
+        lrp_params = {
+            "conv2d_ignorebias": True,
+            "eltwise_eps": 1e-6,
+            "linear_eps": 1e-6,
+            "pooling_eps": 1e-6,
+            "use_zbeta": True,
+        }
+
+        wrapper_model.copyfromresnet(
+            model, lrp_params=lrp_params, lrp_layer2method=lrp_layer2method
+        )
+        pruner = FilterPruner(wrapper_model)
+        train_epoch(X_test, y_test_true, pruner, lrp_model, rank_filters=True)
+    else:
+        pruner = FilterPruner(lrp_model)
+        output = pruner.forward_lrp(X_test)
+
+        T = torch.zeros_like(output)
+        for ii in range(y_test_true.size(0)):
+            T[ii, y_test_true[ii]] = 1.0
+        pruner.backward_lrp(output * T)
+        pruner.filter_ranks = {
+            pruner.activation_to_layer[i]: v for i, v in pruner.filter_ranks.items()
+        }
 
     pruner.normalize_ranks_per_layer()
     return pruner.get_pruning_plan(num_filters_to_prune)
+
+
+def train_epoch(X, y, pruner, model, optimizer=None, rank_filters=True):
+
+    data, target = Variable(X), Variable(y)
+    train_batch(pruner, model, optimizer, 0, data, target, rank_filters)
+
+
+def train_batch(pruner, model, optimizer, batch_idx, batch, label, rank_filters):
+    model.train()
+    model.zero_grad()
+    if optimizer is not None:
+        optimizer.zero_grad()
+
+    with torch.enable_grad():
+        output = model(batch)
+
+    if rank_filters:  # for pruning
+        batch.requires_grad = True
+
+        with torch.enable_grad():
+            output = pruner.model(batch)
+
+        print("Computing LRP")
+
+        # Map the original targets to [0, num_selected_classes)
+        T = torch.zeros_like(output)
+        for ii in range(len(label)):
+            T[ii, label[ii]] = 1.0
+
+        # Multiply output with target
+        lrp_anchor = output * T / (output * T).sum(dim=1, keepdim=True)
+        output.backward(lrp_anchor, retain_graph=True)
+
+        pruner.compute_filter_criterion("conv", criterion="lrp")
 
 
 def fhook(self, input, output):
@@ -31,7 +102,7 @@ def fhook(self, input, output):
 
 class FilterPruner:
     def __init__(self, model):
-        self.model = copy.deepcopy(model)
+        self.model = model
         self.reset()
         self.cuda = torch.cuda.is_available()
         self.relevance = False
@@ -44,10 +115,9 @@ class FilterPruner:
 
     def forward_hook(self):
         # For Forward Hook
-        for name, module in self.model.features._modules.items():
-            module.register_forward_hook(fhook)
-        self.model.avgpool.register_forward_hook(fhook)
-        for name, module in self.model.classifier._modules.items():
+        for module in self.model.modules():
+            if len(list(module.children())) != 0:
+                continue
             module.register_forward_hook(fhook)
 
     def forward_lrp(self, x):
@@ -55,25 +125,28 @@ class FilterPruner:
         self.grad_index = 0
 
         self.activation_index = 0
-        for layer, (name, module) in enumerate(self.model.features._modules.items()):
-            x = module(x)
-            if isinstance(module, torch.nn.modules.conv.Conv2d):
-                self.activation_to_layer[self.activation_index] = layer
-                self.activation_index += 1
+        for name, module in self.model.named_modules():
+            if len(list(module.children())) != 0:
+                continue
+            if name == "classifier.0":
+                x = torch.flatten(x, 1)
+                x = self.model.classifier(x)
+                break
+            elif name == "fc":
+                x = torch.flatten(x, 1)
+                x = module(x)
+            else:
+                x = module(x)
+                if isinstance(module, torch.nn.modules.conv.Conv2d):
+                    self.activation_to_layer[self.activation_index] = name
+                    self.activation_index += 1
 
-        x = self.model.avgpool(x)
-        x = torch.flatten(x, 1)  # flatten the tensor
-        return self.model.classifier(x)
+        return x
 
     def backward_lrp(self, R, relevance_method="z"):
-        for name, module in enumerate(self.model.classifier[::-1]):  # 접근 방법
-            # print(R[10,:].sum())
-            R = lrp(module, R.data, relevance_method, 1)
-
-        R = lrp(self.model.avgpool, R.data, relevance_method, 1)
-
-        for name, module in enumerate(self.model.features[::-1]):  # 접근 방법
-            # print(R[10, :].sum())
+        for index, module in enumerate(list(self.model.modules())[::-1]):  # 접근 방법
+            if len(list(module.children())) != 0:
+                continue
             if isinstance(module, torch.nn.modules.conv.Conv2d):  # !!!
                 activation_index = self.activation_index - self.grad_index - 1
 
@@ -96,167 +169,67 @@ class FilterPruner:
 
             R = lrp(module, R.data, relevance_method, 1)
 
-    def forward(self, x):
-        self.activations = []  # 전체 conv_layer의 activation map 수
-        self.weights = []
-        self.gradients = []
-        self.grad_index = 0
-        self.activation_to_layer = (
-            {}
-        )  # conv layer의 순서 7: 17의미는 7번째 conv layer가 전체에서 17번째에 있다라는 뜻
+    def compute_filter_criterion(
+        self, layer_type="conv", relevance_method="z", criterion="lrp"
+    ):
 
-        activation_index = 0
-        for layer, (name, module) in enumerate(self.model.features._modules.items()):
-            x = module(x)  # 일반적인 forward를 수행하면서..
-            if isinstance(
-                module, torch.nn.modules.conv.Conv2d
-            ):  # conv layer 일때 여기를 지나감
-                x.register_hook(self.compute_rank)
-                if self.method_type == "weight":
-                    self.weights.append(module.weight)
-                self.activations.append(x)
-                self.activation_to_layer[activation_index] = layer
-                activation_index += 1
+        self.activation_index = 0
+        for name, module in self.model.named_modules():
+            if criterion == "lrp" or criterion == "weight":
+                if hasattr(module, "module"):
+                    if isinstance(module.module, nn.Conv2d) and layer_type == "conv":
+                        if name not in self.filter_ranks:
+                            self.filter_ranks[name] = torch.zeros(
+                                module.relevance.shape[1]
+                            )
+                        # else:
+                        #     print("here")
 
-        return self.model.classifier(x.view(x.size(0), -1))
+                        if criterion == "lrp":
+                            values = torch.sum(module.relevance.abs(), dim=(0, 2, 3))
+                        elif criterion == "weight":
+                            values = torch.sum(
+                                module.module.weight.abs(), dim=(1, 2, 3)
+                            )
 
-    def compute_rank(self, grad):
-        activation_index = (
-            len(self.activations) - self.grad_index - 1
-        )  # 뒤에서부터 하나씩 끄집어 냄
-        activation = self.activations[activation_index]
-
-        if self.method_type == "ICLR":
-            values = (
-                torch.sum((activation * grad), dim=0, keepdim=True)
-                .sum(dim=2, keepdim=True)
-                .sum(dim=3, keepdim=True)[0, :, 0, 0]
-                .data
-            )  # P. Molchanov et al., ICLR 2017
-            # Normalize the rank by the filter dimensions
-            values = values / (
-                activation.size(0) * activation.size(2) * activation.size(3)
-            )
-
-        elif self.method_type == "grad":
-            values = (
-                torch.sum((grad), dim=0, keepdim=True)
-                .sum(dim=2, keepdim=True)
-                .sum(dim=3, keepdim=True)[0, :, 0, 0]
-                .data
-            )  # # X. Sun et al., ICML 2017
-            # Normalize the rank by the filter dimensions
-            values = values / (
-                activation.size(0) * activation.size(2) * activation.size(3)
-            )
-
-        elif self.method_type == "weight":
-            weight = self.weights[activation_index]
-            values = (
-                torch.sum((weight).abs(), dim=1, keepdim=True)
-                .sum(dim=2, keepdim=True)
-                .sum(dim=3, keepdim=True)[:, 0, 0, 0]
-                .data
-            )  # Many publications based on weight and activation(=feature) map
-
-        else:
-            values = (
-                torch.sum((activation * grad), dim=0, keepdim=True)
-                .sum(dim=2, keepdim=True)
-                .sum(dim=3, keepdim=True)[0, :, 0, 0]
-                .data
-            )  # P. Molchanov et al., ICLR 2017
-            # Normalize the rank by the filter dimensions
-            values = values / (
-                activation.size(0) * activation.size(2) * activation.size(3)
-            )
-
-        if activation_index not in self.filter_ranks:
-            self.filter_ranks[activation_index] = (
-                torch.FloatTensor(activation.size(1)).zero_().cuda()
-                if self.cuda
-                else torch.FloatTensor(activation.size(1)).zero_()
-            )
-
-        self.filter_ranks[activation_index] += values
-        self.grad_index += 1
+                        if hasattr(module, "output_mask"):
+                            values[module.output_mask == 0] = EXTREMELY_HIGH_VALUE
+                        self.filter_ranks[name] += (
+                            values.cpu() if torch.cuda.is_available() else values
+                        )
 
     def normalize_ranks_per_layer(self):
         for i in self.filter_ranks:
-
-            if (
-                self.relevance
-            ):  # average over trials - LRP case (this is not normalization !!)
-                v = self.filter_ranks[i]
-                v = v / torch.sum(v)  # torch.sum(v) = total number of dataset
-                self.filter_ranks[i] = v.cpu()
-            else:
-                if self.norm:  # L2-norm for global rescaling
-                    if (
-                        self.method_type == "weight"
-                    ):  # weight & L1-norm (Li et al., ICLR 2017)
-                        v = self.filter_ranks[i]
-                        v = v / torch.sum(v)  # L1
-                        # v = v / torch.sqrt(torch.sum(v * v)) #L2
-                        self.filter_ranks[i] = v.cpu()
-                    elif (
-                        self.method_type == "ICLR"
-                    ):  # |grad*act| & L2-norm (Molchanov et al., ICLR 2017)
-                        v = torch.abs(self.filter_ranks[i])
-                        v = v / torch.sqrt(torch.sum(v * v))
-                        self.filter_ranks[i] = v.cpu()
-                    elif (
-                        self.method_type == "grad"
-                    ):  # |grad| & L2-norm (Sun et al., ICML 2017)
-                        v = torch.abs(self.filter_ranks[i])
-                        v = v / torch.sqrt(torch.sum(v * v))
-                        self.filter_ranks[i] = v.cpu()
-                else:
-                    if self.method_type == "weight":  # weight
-                        v = self.filter_ranks[i]
-                        self.filter_ranks[i] = v.cpu()
-                    elif self.method_type == "ICLR":  # |grad*act|
-                        v = torch.abs(self.filter_ranks[i])
-                        self.filter_ranks[i] = v.cpu()
-                    elif self.method_type == "grad":  # |grad|
-                        v = torch.abs(self.filter_ranks[i])
-                        self.filter_ranks[i] = v.cpu()
+            # average over trials - LRP case (this is not normalization !!)
+            v = self.filter_ranks[i]
+            v = v / torch.sum(v)  # torch.sum(v) = total number of dataset
+            self.filter_ranks[i] = v.cpu()
 
     def get_pruning_plan(self, num_filters_to_prune):
-        filters_to_prune = self.lowest_ranking_filters(num_filters_to_prune)
-        # filters_to_prune: filters to be pruned 1) layer number, 2) filter number, 3) its value
+        ranked_filters = self.lowest_ranking_filters(num_filters_to_prune)
+        assert len(ranked_filters) == num_filters_to_prune
+        assert len(set([x[:2] for x in ranked_filters])) == num_filters_to_prune
 
-        # After each of the k filters are prunned,
-        # the filter index of the next filters change since the model is smaller.
-        filters_to_prune_per_layer = {}
-        for l, f, _ in filters_to_prune:
-            if l not in filters_to_prune_per_layer:
-                filters_to_prune_per_layer[l] = []
-            filters_to_prune_per_layer[l].append(f)
-
-        filters_to_prune = []
-        for l in filters_to_prune_per_layer:
-            for i in filters_to_prune_per_layer[l]:
-                filters_to_prune.append((l, i))
-
-        layer_names = list(dict(self.model.named_modules()).keys())[2:]
-        layer_to_filter_indices = {
-            layer_names[index]: indices
-            for index, indices in filters_to_prune_per_layer.items()
-        }
+        ranked_filters = [x[:2] for x in ranked_filters]
+        layer_to_filter_indices = {}
+        for name, value in ranked_filters:
+            layer_to_filter_indices.setdefault(name, []).append(value)
 
         return layer_to_filter_indices
 
     def lowest_ranking_filters(self, num):
         data = []
+
         for i in sorted(self.filter_ranks.keys()):
             for j in range(self.filter_ranks[i].size(0)):
-                data.append((self.activation_to_layer[i], j, self.filter_ranks[i][j]))
+                data.append((i, j, self.filter_ranks[i][j]))
                 # data 변수에 모든 layer의 모든 filter의 값을 쭈욱 나열 시킨다.
 
-        return nsmallest(
+        filters_to_prune = nsmallest(
             num, data, itemgetter(2)
         )  # data list 내에서 가장 작은 수를 num(=512개) 만큼 뽑아서 리스트에 저장
+
+        return filters_to_prune
 
 
 def lrp(module, R, lrp_var=None, param=None):

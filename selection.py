@@ -105,12 +105,17 @@ class OCAP(PruningSelection):
 
 class LRPPruning(PruningSelection):
     def __init__(
-        self, num_filters: int, data_loader: torch.utils.data.DataLoader, device="cpu"
+        self,
+        num_filters: int,
+        data_loader: torch.utils.data.DataLoader,
+        device="cpu",
+        skip_first_layer: bool = True,
     ):
         super().__init__()
         self.num_filters = num_filters
         self.data_loader = data_loader
         self.device = device
+        self.skip_first_layer = skip_first_layer
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the LAP Pruning method."""
@@ -123,5 +128,10 @@ class LRPPruning(PruningSelection):
             X_test=X.to(self.device),
             y_test_true=y.to(self.device),
         )
+
+        if self.skip_first_layer:
+            # Skip the first layer's indices if specified
+            first_layer_name = list(model.named_modules())[1][0]
+            indices = {k: v for k, v in indices.items() if k != first_layer_name}
 
         return indices

@@ -21,7 +21,12 @@ import wandb
 def main(cfg: DictConfig):
     if cfg.log_results:
         wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
-        wandb.init(project="ClassAwarePruning", entity="smilla-fox", config=wandb_cfg)
+        wandb.init(
+            project="ClassAwarePruning",
+            entity="smilla-fox",
+            config=wandb_cfg,
+            name=cfg.run_name,
+        )
 
     device = torch.device(
         "cuda"
@@ -86,7 +91,10 @@ def main(cfg: DictConfig):
     masks = get_pruning_masks(indices, model)
 
     pruner = StructuredPruner(
-        model=model, masks=masks, selected_classes=cfg.selected_classes
+        model=model,
+        masks=masks,
+        selected_classes=cfg.selected_classes,
+        replace_last_layer=cfg.replace_last_layer,
     )
 
     pruned_model = pruner.prune()
@@ -105,13 +113,6 @@ def main(cfg: DictConfig):
         pruned_model, device, test_loader, print_results=True, all_classes=True
     )
 
-    if cfg.log_results:
-        wandb.log(
-            {
-                "original_class_accuracies": class_accuracies_original,
-                "pruned_class_accuracies": class_accuracies_pruned,
-            }
-        )
     plot_accuracies(class_accuracies_original, class_accuracies_pruned, cfg.model.name)
     print(f"Parameter ratio after pruning: {get_parameter_ratio(model, pruned_model)}")
 
