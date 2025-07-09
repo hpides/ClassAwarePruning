@@ -34,7 +34,7 @@ def get_selector(
             data_loader=data_loader,
             activation_func=selector_config.activation_func,
             device=device,
-            skip_first_layer=selector_config.skip_first_layer,
+            skip_first_layers=selector_config.skip_first_layers,
         )
     elif selector_config.name == "lrp":
         return LRPPruning(
@@ -73,14 +73,14 @@ class OCAP(PruningSelection):
         data_loader: torch.utils.data.DataLoader,
         activation_func: str = "relu",
         device="mps",
-        skip_first_layer: bool = True,
+        skip_first_layers: int = 1,
     ):
         super().__init__()
         self.pruning_ratio = pruning_ratio
         self.data_loader = data_loader
         self.activation_func = get_activation_function(activation_func)
         self.device = device
-        self.skip_first_layer = skip_first_layer
+        self.skip_first_layers = skip_first_layers
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the OCAP method."""
@@ -94,9 +94,9 @@ class OCAP(PruningSelection):
         )
 
         names_of_conv_layers = get_names_of_conv_layers(model)
-        if self.skip_first_layer:
-            layer_masks = layer_masks[1:]
-            names_of_conv_layers = names_of_conv_layers[1:]
+        if self.skip_first_layers:
+            layer_masks = layer_masks[self.skip_first_layers :]
+            names_of_conv_layers = names_of_conv_layers[self.skip_first_layers :]
         masks = {name: layer_masks[i] for i, name in enumerate(names_of_conv_layers)}
         indices = get_pruning_indices(masks)
 
