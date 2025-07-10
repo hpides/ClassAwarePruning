@@ -11,7 +11,7 @@ from helpers import (
     plot_accuracies,
     get_pruning_masks,
 )
-from pruner import DepGraphPruner, StructuredPruner
+from pruner import StructuredPruner
 from selection import get_selector
 from models import get_model
 import wandb
@@ -106,11 +106,22 @@ def main(cfg: DictConfig):
     model.to(device)
     pruned_model.to(device)
     _, class_accuracies_original = evaluate_model(
-        model, device, test_loader, print_results=True, all_classes=True
+        model,
+        device,
+        test_loader,
+        print_results=True,
+        all_classes=True,
+        num_classes=cfg.dataset.num_classes,
     )
     print("After pruning:")
     _, class_accuracies_pruned = evaluate_model(
-        pruned_model, device, test_loader, print_results=True, all_classes=True
+        pruned_model,
+        device,
+        test_loader,
+        print_results=True,
+        all_classes=True,
+        selected_classes=cfg.selected_classes if cfg.replace_last_layer else None,
+        num_classes=cfg.dataset.num_classes,
     )
 
     plot_accuracies(class_accuracies_original, class_accuracies_pruned, cfg.model.name)

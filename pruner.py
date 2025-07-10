@@ -30,7 +30,7 @@ class StructuredPruner:
         self.model = copy.deepcopy(model)
         self.masks = masks
         self.selected_classes = selected_classes
-        self._replace_last_layer = replace_last_layer
+        self.replace_last_layer = replace_last_layer
 
     def prune(self):
         # Symbolically trace the model
@@ -124,7 +124,7 @@ class StructuredPruner:
                             last_user = user
 
         # Replace the last layer for classification
-        if self._replace_last_layer:
+        if self.replace_last_layer:
             self._replace_last_layer()
 
         return self.model

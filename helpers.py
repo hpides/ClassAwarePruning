@@ -10,20 +10,30 @@ def evaluate_model(
     test_loader: DataLoader,
     print_results: bool = True,
     all_classes: bool = False,
-    log_results: bool = False,
+    num_classes: int = 10,
+    selected_classes: list = None,
 ):
     """Function to evaluate the model."""
     model.eval()
     correct = 0
     total = 0
-    class_correct = [0] * 10
-    class_total = [0] * 10
+    if selected_classes:
+        other_classes = set(range(num_classes)) - set(selected_classes)
+        selected_classes.extend(list(other_classes))
+        selected_classes = torch.tensor(selected_classes).to(device)
+    class_correct = [0] * num_classes
+    class_total = [0] * num_classes
 
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
+            predicted = (
+                selected_classes[predicted]
+                if selected_classes is not None
+                else predicted
+            )
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
             c = (predicted == labels).squeeze()
@@ -39,7 +49,7 @@ def evaluate_model(
 
     class_accuracies = []
     if all_classes and print_results:
-        for i in range(10):
+        for i in range(num_classes):
             if class_total[i] > 0:
                 accuracy_i = 100 * class_correct[i] / class_total[i]
                 class_accuracies.append(accuracy_i)
