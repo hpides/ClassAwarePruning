@@ -3,10 +3,15 @@ from torch import nn
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from data_loader import get_CIFAR10_dataloaders
+from metrics import (
+    get_parameter_ratio,
+    calculate_model_accuracy,
+    get_model_size,
+    measure_inference_time,
+    calculate_accuracy_for_selected_classes,
+)
 from helpers import (
     train_model,
-    evaluate_model,
-    get_parameter_ratio,
     get_optimizer,
     plot_accuracies,
     get_pruning_masks,
@@ -19,21 +24,25 @@ import wandb
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: DictConfig):
+    wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
+    if cfg.device:
+        device = cfg.device
+
+    wandb_cfg["device"] = device
+    print(f"Using device: {device}")
+
     if cfg.log_results:
-        wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
         wandb.init(
             project="ClassAwarePruning",
             entity="smilla-fox",
             config=wandb_cfg,
             name=cfg.run_name,
         )
-
-    device = torch.device(
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available() else "cpu"
-    )
-    print(f"Using device: {device}")
 
     train_loader, test_loader = get_CIFAR10_dataloaders(
         train_batch_size=cfg.training.batch_size_train,
@@ -105,7 +114,7 @@ def main(cfg: DictConfig):
     print("Before pruning:")
     model.to(device)
     pruned_model.to(device)
-    _, class_accuracies_original = evaluate_model(
+    _, class_accuracies_original = calculate_model_accuracy(
         model,
         device,
         test_loader,
@@ -114,19 +123,61 @@ def main(cfg: DictConfig):
         num_classes=cfg.dataset.num_classes,
     )
     print("After pruning:")
-    _, class_accuracies_pruned = evaluate_model(
+    _, class_accuracies_pruned = calculate_model_accuracy(
         pruned_model,
         device,
         test_loader,
         print_results=True,
         all_classes=True,
-        selected_classes=cfg.selected_classes if cfg.replace_last_layer else None,
+        selected_classes=(
+            cfg.selected_classes.copy() if cfg.replace_last_layer else None
+        ),
         num_classes=cfg.dataset.num_classes,
     )
+    accuracy_before = calculate_accuracy_for_selected_classes(
+        class_accuracies_original, cfg.selected_classes
+    )
+    accuracy_after = calculate_accuracy_for_selected_classes(
+        class_accuracies_pruned, cfg.selected_classes
+    )
+    print(f"Accuracy before pruning: {accuracy_before:.2f}%")
+    print(f"Accuracy after pruning: {accuracy_after:.2f}%")
+    model_size_before = get_model_size(model)
+    model_size_after = get_model_size(pruned_model)
+    inference_time_before = measure_inference_time(
+        test_loader, model, device, cfg.training.batch_size_test
+    )
+    inference_time_after = measure_inference_time(
+        test_loader, pruned_model, device, cfg.training.batch_size_test
+    )
 
-    plot_accuracies(class_accuracies_original, class_accuracies_pruned, cfg.model.name)
+    print(f"Batch Inference time before pruning: {inference_time_before}")
+    print(f"Batch Inference time after pruning: {inference_time_after}")
+
+    print(f"Model size before pruning: {model_size_before} MB")
+    print(f"Model size after pruning: {model_size_after} MB")
+    # plot_accuracies(class_accuracies_original, class_accuracies_pruned, cfg.model.name)
     print(f"Parameter ratio after pruning: {get_parameter_ratio(model, pruned_model)}")
-
+    if cfg.log_results:
+        wandb.log(
+            {
+                "accuracy_before": accuracy_before,
+                "accuracy_after": accuracy_after,
+                "model_size_before": model_size_before,
+                "model_size_after": model_size_after,
+                "model_size_ratio": model_size_after / model_size_before,
+                "parameter_ratio": get_parameter_ratio(model, pruned_model),
+                "class_accuracies_original": class_accuracies_original,
+                "class_accuracies_pruned": class_accuracies_pruned,
+                "inference_time_batch_before": inference_time_before,
+                "inference_time_batch_after": inference_time_after,
+                "inference_time_ratio": inference_time_after / inference_time_before,
+                "inference_time_per_sample_before": inference_time_before
+                / cfg.training.batch_size_test,
+                "inference_time_per_sample_after": inference_time_after
+                / cfg.training.batch_size_test,
+            }
+        )
     if cfg.log_results:
         wandb.finish()
 

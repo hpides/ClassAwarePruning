@@ -3,61 +3,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
-
-def evaluate_model(
-    model: nn.Module,
-    device: str,
-    test_loader: DataLoader,
-    print_results: bool = True,
-    all_classes: bool = False,
-    num_classes: int = 10,
-    selected_classes: list = None,
-):
-    """Function to evaluate the model."""
-    model.eval()
-    correct = 0
-    total = 0
-    if selected_classes:
-        other_classes = set(range(num_classes)) - set(selected_classes)
-        selected_classes.extend(list(other_classes))
-        selected_classes = torch.tensor(selected_classes).to(device)
-    class_correct = [0] * num_classes
-    class_total = [0] * num_classes
-
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs.data, 1)
-            predicted = (
-                selected_classes[predicted]
-                if selected_classes is not None
-                else predicted
-            )
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-            c = (predicted == labels).squeeze()
-            for i in range(labels.size(0)):
-                label = labels[i]
-                class_correct[label] += c[i].item()
-                class_total[label] += 1
-
-    accuracy = 100 * correct / total
-
-    if print_results:
-        print(f"Accuracy of the model on the test set: {accuracy:.2f}%")
-
-    class_accuracies = []
-    if all_classes and print_results:
-        for i in range(num_classes):
-            if class_total[i] > 0:
-                accuracy_i = 100 * class_correct[i] / class_total[i]
-                class_accuracies.append(accuracy_i)
-                print(f"Accuracy of class {i}: {accuracy_i:.2f}%")
-            else:
-                print(f"Class {i} has no samples in the test set.")
-
-    return accuracy, class_accuracies
+from metrics import calculate_model_accuracy
 
 
 def train_model(
@@ -102,7 +48,7 @@ def train_model(
         epoch_loss = running_loss / len(train_loader)
         epoch_acc_train = 100.0 * correct / total
 
-        test_accuracy = evaluate_model(
+        test_accuracy = calculate_model_accuracy(
             model, device, test_loader, print_results=False, all_classes=False
         )
 
@@ -154,13 +100,6 @@ def get_names_of_conv_layers(model: nn.Module):
         if isinstance(module, nn.Conv2d):
             conv_layer_names.append(name)
     return conv_layer_names
-
-
-def get_parameter_ratio(model: nn.Module, pruned_model: nn.Module):
-    """Calculate the ratio of parameters in the pruned model to the original model."""
-    original_params = sum(p.numel() for p in model.parameters())
-    pruned_params = sum(p.numel() for p in pruned_model.parameters())
-    return pruned_params / original_params if original_params > 0 else 0
 
 
 def get_pruning_indices(masks):
