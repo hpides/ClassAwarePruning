@@ -20,6 +20,7 @@ from pruner import StructuredPruner
 from selection import get_selector
 from models import get_model
 import wandb
+import PIL
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -156,7 +157,10 @@ def main(cfg: DictConfig):
 
     print(f"Model size before pruning: {model_size_before} MB")
     print(f"Model size after pruning: {model_size_after} MB")
-    # plot_accuracies(class_accuracies_original, class_accuracies_pruned, cfg.model.name)
+    image_path = plot_accuracies(
+        class_accuracies_original, class_accuracies_pruned, cfg.model.name
+    )
+    image = PIL.Image.open(image_path)
     print(f"Parameter ratio after pruning: {get_parameter_ratio(model, pruned_model)}")
     if cfg.log_results:
         wandb.log(
@@ -176,6 +180,7 @@ def main(cfg: DictConfig):
                 / cfg.training.batch_size_test,
                 "inference_time_per_sample_after": inference_time_after
                 / cfg.training.batch_size_test,
+                "accuracies_plot": wandb.Image(image),
             }
         )
     if cfg.log_results:

@@ -123,12 +123,18 @@ def get_pruning_masks(indices: dict, model: nn.Module):
 
 def plot_accuracies(original_accuracies, pruned_accuracies, model_name):
     # Plot the accuracies of the different classes before and after pruning stacked in the same plot
+    original_accuracies_list = [
+        original_accuracies[i] for i in range(len(original_accuracies))
+    ]
+    pruned_accuracies_list = [
+        pruned_accuracies[i] for i in range(len(pruned_accuracies))
+    ]
     plt.figure(figsize=(10, 6))
-    x = range(len(original_accuracies))
-    plt.bar(x, original_accuracies, width=0.4, label="Original", align="center")
+    x = range(len(original_accuracies_list))
+    plt.bar(x, original_accuracies_list, width=0.4, label="Original", align="center")
     plt.bar(
         [i + 0.4 for i in x],
-        pruned_accuracies,
+        pruned_accuracies_list,
         width=0.4,
         label="Pruned",
         align="center",
@@ -136,8 +142,12 @@ def plot_accuracies(original_accuracies, pruned_accuracies, model_name):
     plt.xlabel("Classes")
     plt.ylabel("Accuracy (%)")
     plt.title(f"Class-wise Accuracy Comparison for {model_name}")
-    plt.xticks([i + 0.2 for i in x], [str(i) for i in range(len(original_accuracies))])
+    plt.xticks(
+        [i + 0.2 for i in x], [str(i) for i in range(len(original_accuracies_list))]
+    )
     plt.legend()
     plt.grid(axis="y")
     plt.tight_layout()
-    plt.savefig(f"{model_name}_accuracy_comparison.png")
+    image_path = f"{model_name}_accuracy_comparison.png"
+    plt.savefig(image_path)
+    return image_path
