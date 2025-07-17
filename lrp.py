@@ -156,6 +156,7 @@ class FilterPruner:
                     .sum(dim=3, keepdim=True)[0, :, 0, 0]
                     .data
                 )
+                values = values.cuda() if self.cuda else values
 
                 if activation_index not in self.filter_ranks:
                     self.filter_ranks[activation_index] = (
