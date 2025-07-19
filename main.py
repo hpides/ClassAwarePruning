@@ -88,7 +88,6 @@ def main(cfg: DictConfig):
         use_data_Augmentation=False,
         data_path="./data/cifar",
         download=True,
-        train_shuffle=True,
         selected_classes=cfg.selected_classes,
         num_pruning_samples=cfg.num_pruning_samples,
     )

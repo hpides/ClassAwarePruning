@@ -1,7 +1,6 @@
-from torch.utils.data import DataLoader, SubsetRandomSampler
+from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from typing import List
-import random
 
 
 def get_CIFAR10_dataloaders(
@@ -10,7 +9,7 @@ def get_CIFAR10_dataloaders(
     use_data_Augmentation: bool = True,
     data_path: str = "./data/cifar",
     download: bool = False,
-    train_shuffle: bool = True,
+    train_shuffle: bool = False,
     selected_classes: List[int] = [],
     num_pruning_samples: int = 512,
 ):
@@ -49,14 +48,13 @@ def get_CIFAR10_dataloaders(
             for i, label in enumerate(train_data_set.targets)
             if label in selected_classes
         ]
-        random.shuffle(indices)  # Shuffle to get a random subset
         indices = indices[:num_pruning_samples]
-        sampler = SubsetRandomSampler(indices)
+        subset_dataset = Subset(train_data_set, indices)
+
         subset_train_data_loader = DataLoader(
-            train_data_set,
+            subset_dataset,
             batch_size=train_batch_size,
-            shuffle=False,
-            sampler=sampler,
+            shuffle=False,  # Keep shuffle=False for deterministic ordering
         )
         return subset_train_data_loader
 
@@ -64,7 +62,7 @@ def get_CIFAR10_dataloaders(
         train_data_set, batch_size=train_batch_size, shuffle=train_shuffle
     )
     test_data_loader = DataLoader(
-        test_data_set, batch_size=test_batch_size, shuffle=True
+        test_data_set, batch_size=test_batch_size, shuffle=False
     )
 
     return train_data_loader, test_data_loader
