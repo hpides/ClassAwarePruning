@@ -154,6 +154,7 @@ def main(cfg: DictConfig):
 
     print(f"Batch Inference time before pruning: {inference_time_before}")
     print(f"Batch Inference time after pruning: {inference_time_after}")
+    print(f"Inference time ratio: {inference_time_after / inference_time_before}")
 
     print(f"Model size before pruning: {model_size_before} MB")
     print(f"Model size after pruning: {model_size_after} MB")
