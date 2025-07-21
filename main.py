@@ -15,8 +15,9 @@ from helpers import (
     get_optimizer,
     plot_accuracies,
     get_pruning_masks,
+    filter_pruning_indices_for_resnet,
 )
-from pruner import StructuredPruner
+from pruner import StructuredPruner, DepGraphPruner
 from selection import get_selector
 from models import get_model
 import wandb
@@ -99,12 +100,24 @@ def main(cfg: DictConfig):
     indices = selector.select(model=model)
     masks = get_pruning_masks(indices, model)
 
-    pruner = StructuredPruner(
-        model=model,
-        masks=masks,
-        selected_classes=cfg.selected_classes,
-        replace_last_layer=cfg.replace_last_layer,
-    )
+    if cfg.resnet_zero_insertion:
+        pruner = StructuredPruner(
+            model=model,
+            masks=masks,
+            selected_classes=cfg.selected_classes,
+            replace_last_layer=cfg.replace_last_layer,
+        )
+    else:
+        if cfg.model.name.startswith("resnet"):
+            indices = filter_pruning_indices_for_resnet(indices)
+
+        pruner = DepGraphPruner(
+            model=model,
+            indices=indices,
+            replace_last_layer=cfg.replace_last_layer,
+            selected_classes=cfg.selected_classes,
+            device=device,
+        )
 
     pruned_model = pruner.prune()
     torch.save(pruned_model.state_dict(), "pruned_model.pth")

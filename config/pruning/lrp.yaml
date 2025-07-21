@@ -1,2 +1,3 @@
 name: lrp
-num_filters: 2000
+num_filters: 1000
+skip_first_layers: 3

@@ -151,3 +151,11 @@ def plot_accuracies(original_accuracies, pruned_accuracies, model_name):
     image_path = f"{model_name}_accuracy_comparison.png"
     plt.savefig(image_path)
     return image_path
+
+
+def filter_pruning_indices_for_resnet(indices: dict):
+    keys = list(indices.keys())
+    for key in keys:
+        if "conv2" in key or "downsample" in key:
+            indices.pop(key, None)
+    return indices

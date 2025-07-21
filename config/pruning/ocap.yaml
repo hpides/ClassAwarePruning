@@ -1,4 +1,4 @@
 name: ocap
-pruning_ratio: 0.05
+pruning_ratio: 0.02
 skip_first_layers: 3
 activation_func: relu

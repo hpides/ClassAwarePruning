@@ -290,26 +290,3 @@ class ZeroInsertion(nn.Module):
         output = torch.zeros(output_shape, dtype=input.dtype, device=input.device)
         output[:, self.indices] = input
         return output
-
-
-class ZeroInsertionNew(nn.Module):
-    def __init__(self, indices: torch.Tensor, out_features: int) -> None:
-        super().__init__()
-        # Store indices on register_buffer for better CUDA optimization
-        self.register_buffer("indices", indices)
-        self.out_features = out_features
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        # Use torch.index_select or F.pad with index operations
-        # This is much faster for models that will be deployed
-        x = torch.nn.functional.pad(
-            input,
-            (0, 0, 0, 0, 0, self.out_features - input.size(1), 0, 0),
-            mode="constant",
-            value=0,
-        )
-        all_indices = torch.arange(self.out_features, device=input.device)
-        complement = all_indices[~torch.isin(all_indices, self.indices)]
-        perm = torch.cat([self.indices, complement])
-        perm = perm.argsort()
-        return x[:, perm, :, :]

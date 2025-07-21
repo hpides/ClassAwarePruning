@@ -38,7 +38,9 @@ def get_selector(
         )
     elif selector_config.name == "lrp":
         return LRPPruning(
-            num_filters=selector_config.num_filters, data_loader=data_loader
+            num_filters=selector_config.num_filters,
+            data_loader=data_loader,
+            skip_first_layers=selector_config.skip_first_layers,
         )
 
 
@@ -109,13 +111,13 @@ class LRPPruning(PruningSelection):
         num_filters: int,
         data_loader: torch.utils.data.DataLoader,
         device="cpu",
-        skip_first_layer: bool = True,
+        skip_first_layers: int = None,
     ):
         super().__init__()
         self.num_filters = num_filters
         self.data_loader = data_loader
         self.device = device
-        self.skip_first_layer = skip_first_layer
+        self.skip_first_layers = skip_first_layers
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the LAP Pruning method."""
@@ -129,9 +131,13 @@ class LRPPruning(PruningSelection):
             y_test_true=y.to(self.device),
         )
 
-        if self.skip_first_layer:
-            # Skip the first layer's indices if specified
-            first_layer_name = list(model.named_modules())[1][0]
-            indices = {k: v for k, v in indices.items() if k != first_layer_name}
+        names_of_conv_layers = get_names_of_conv_layers(model)
+        if self.skip_first_layers:
+            names_of_conv_layers = names_of_conv_layers[self.skip_first_layers :]
+            indices = {
+                name: indices.get(name, None)
+                for name in names_of_conv_layers
+                if name in indices
+            }
 
         return indices
