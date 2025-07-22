@@ -18,6 +18,7 @@ def get_model(model_name: str, pretrained: bool, num_classes: int = 10) -> nn.Mo
         "vgg16": models.vgg16,
         "resnet18": models.resnet18,
         "resnet50": models.resnet50,
+        "resnet152": models.resnet152,
         "mobilenetv2": models.mobilenet_v2,
     }
 
@@ -30,7 +31,7 @@ def get_model(model_name: str, pretrained: bool, num_classes: int = 10) -> nn.Mo
     if num_classes != 1000:
         if model_name == "vgg16":
             model.classifier[6] = nn.Linear(4096, num_classes)
-        elif model_name == "resnet18":
+        elif model_name.startswith("resnet"):
             model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     return model

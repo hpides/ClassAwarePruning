@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+import wandb
 
 from metrics import calculate_model_accuracy
 
@@ -16,6 +17,7 @@ def train_model(
     device: str,
     scheduler=None,
     num_epochs=20,
+    log_results=False
 ):
     """Function to train the model."""
     best_accuracy = 0.0
@@ -48,9 +50,17 @@ def train_model(
         epoch_loss = running_loss / len(train_loader)
         epoch_acc_train = 100.0 * correct / total
 
-        test_accuracy = calculate_model_accuracy(
+        test_accuracy, _ = calculate_model_accuracy(
             model, device, test_loader, print_results=False, all_classes=False
         )
+
+        if log_results:
+            wandb.log({
+                "epoch": epoch,
+                "loss": epoch_loss,
+                "train_accuracy_epoch": epoch_acc_train,
+                "test_accuracy_epoch": test_accuracy,
+            })
 
         print(
             f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}, Train Accuracy: {epoch_acc_train:.2f}, Test Accuracy: {test_accuracy:.2f}"

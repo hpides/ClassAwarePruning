@@ -75,6 +75,7 @@ def main(cfg: DictConfig):
             optimizer=optimizer,
             device=device,
             num_epochs=cfg.training.epochs,
+            log_results=cfg.log_results
         )
     else:
         weights = torch.load(
