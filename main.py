@@ -33,7 +33,7 @@ def main(cfg: DictConfig):
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
     if cfg.device:
-        device = cfg.device
+        device = torch.device(cfg.device)
 
     wandb_cfg["device"] = device
     print(f"Using device: {device}")

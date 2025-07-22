@@ -1,4 +1,5 @@
 import os
+import time
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -101,14 +102,25 @@ def measure_inference_time(
     for x, y in data_loader:
         x, y = x.to(device), y
 
-        with profile(
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True
-        ) as prof:
-            with record_function("model_inference"):
-                _ = model(x)
-        for event in prof.key_averages():
-            if device == "cuda":
-                times.append(event.device_time_total / 1000)  # Convert to ms
-            else:
-                times.append(event.cpu_time_total / 1000)  # Convert to ms
+        if device.type == "mps":
+            start_time = time.time()
+            torch.mps.synchronize() 
+            _ = model(x)
+            torch.mps.synchronize() 
+            end_time = time.time()
+            times.append((end_time - start_time)*1000)  # Convert to ms
+        else:
+            with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
+            ) as prof:
+                with record_function("model_inference"):
+                    _ = model(x)
+            for event in prof.key_averages():
+                if event.key == "model_inference":
+                    if device.type == "cuda":
+                        times.append(event.device_time_total / 1000)  # Convert to ms
+                    else:
+                        times.append(event.cpu_time_total / 1000)  # Convert to ms
     return mean(times) if times else 0
+
+
