@@ -42,6 +42,8 @@ def get_selector(
             data_loader=data_loader,
             skip_first_layers=selector_config.skip_first_layers,
         )
+    elif selector_config.name == "ln_structured":
+        return LnStructuredPruning(selector_config.pruning_ratio, selector_config.skip_first_layers, selector_config.norm)
 
 
 class PruningSelection(ABC):
@@ -141,3 +143,38 @@ class LRPPruning(PruningSelection):
             }
 
         return indices
+
+
+class LnStructuredPruning(PruningSelection):
+    def __init__(self, pruning_ratio: float, skip_first_layers: int, norm: int=2):
+        super().__init__()
+        self.pruning_ratio = pruning_ratio
+        self.norm = norm
+        self.skip_first_layers = skip_first_layers
+
+    # TODO: Maybe prune globally instead
+    def select(self, model: nn.Module):
+        indices = {}
+        for name, module in model.named_modules():
+            if isinstance(module, nn.Conv2d):
+                scores = self._weight_norm(module)
+                # get indices of the highest scores according to the pruning ratio
+                num_filters = module.out_channels
+                num_to_prune = int(num_filters * self.pruning_ratio)
+                top_indices = torch.topk(scores, num_to_prune, largest=False).indices.tolist()
+                indices[name] = top_indices
+        
+        names_of_conv_layers = get_names_of_conv_layers(model)
+        if self.skip_first_layers:
+            names_of_conv_layers = names_of_conv_layers[self.skip_first_layers :]
+            indices = {
+                name: indices.get(name, None)
+                for name in names_of_conv_layers
+                if name in indices
+            }
+
+        return indices
+    
+    def _weight_norm(self, module: nn.Module):
+        weight = module.weight.data
+        return torch.norm(weight, p=self.norm, dim=(1, 2, 3))  # Assuming 4D tensor for Conv2d
