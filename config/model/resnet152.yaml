@@ -1,1 +1,2 @@
-name: resnet18
+name: resnet152
+pretrained_weights_path: resnet152_best_model_epoch_55.pth

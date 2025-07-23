@@ -110,7 +110,7 @@ def main(cfg: DictConfig):
         )
     else:
         if cfg.model.name.startswith("resnet"):
-            indices = filter_pruning_indices_for_resnet(indices)
+            indices = filter_pruning_indices_for_resnet(indices, cfg.model.name)
 
         pruner = DepGraphPruner(
             model=model,
