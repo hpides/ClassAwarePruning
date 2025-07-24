@@ -96,7 +96,7 @@ def main(cfg: DictConfig):
 
     # Select the filters to prune
     selector = get_selector(
-        selector_config=cfg.pruning, data_loader=subset_data_loader, device=device
+        selector_config=cfg.pruning, data_loader=subset_data_loader, device=device, skip_first_layers=cfg.model.skip_first_layers
     )
     indices = selector.select(model=model)
     masks = get_pruning_masks(indices, model)

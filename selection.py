@@ -16,6 +16,7 @@ def get_selector(
     selector_config: DictConfig,
     data_loader: torch.utils.data.DataLoader | None = None,
     device: str | None = None,
+    skip_first_layers: int = 0,
 ) -> "PruningSelection":
     """
     Factory function to get a pruning selection strategy based on the type.
@@ -34,23 +35,47 @@ def get_selector(
             data_loader=data_loader,
             activation_func=selector_config.activation_func,
             device=device,
-            skip_first_layers=selector_config.skip_first_layers,
+            skip_first_layers=skip_first_layers,
         )
     elif selector_config.name == "lrp":
         return LRPPruning(
             num_filters=selector_config.num_filters,
             data_loader=data_loader,
-            skip_first_layers=selector_config.skip_first_layers,
+            skip_first_layers=skip_first_layers,
         )
     elif selector_config.name == "ln_structured":
-        return LnStructuredPruning(selector_config.pruning_ratio, selector_config.skip_first_layers, selector_config.norm)
+        return LnStructuredPruning(selector_config.pruning_ratio, skip_first_layers, selector_config.norm)
 
 
 class PruningSelection(ABC):
+
+    def __init__(self, skip_first_layers: int = 0):
+        super().__init__()
+        self.skip_first_layers = skip_first_layers
+
     @abstractmethod
     def select(self, model: nn.Module):
         pass
 
+    def _remove_first_layers_in_selection(self, selection: dict, model: nn.Module):
+        """
+        Remove the first layers from the selected indices/masks.
+        Args:
+            selction (dict): Dictionary of indices or masks.
+        Returns:
+            dict: Filtered dictionary.
+        """
+        names_of_conv_layers = get_names_of_conv_layers(model)
+        names_of_conv_layers = names_of_conv_layers[self.skip_first_layers:] 
+        selection = {
+            name: selection.get(name, None)
+            for name in names_of_conv_layers
+            if name in selection
+            }
+        return selection
+        
+           
+        
 
 class RandomSelection(PruningSelection):
     def __init__(self, pruning_ratio: float):
@@ -79,12 +104,11 @@ class OCAP(PruningSelection):
         device="mps",
         skip_first_layers: int = 1,
     ):
-        super().__init__()
+        super().__init__(skip_first_layers=skip_first_layers)
         self.pruning_ratio = pruning_ratio
         self.data_loader = data_loader
         self.activation_func = get_activation_function(activation_func)
         self.device = device
-        self.skip_first_layers = skip_first_layers
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the OCAP method."""
@@ -98,10 +122,9 @@ class OCAP(PruningSelection):
         )
 
         names_of_conv_layers = get_names_of_conv_layers(model)
+        masks = dict(zip(names_of_conv_layers, layer_masks))
         if self.skip_first_layers:
-            layer_masks = layer_masks[self.skip_first_layers :]
-            names_of_conv_layers = names_of_conv_layers[self.skip_first_layers :]
-        masks = {name: layer_masks[i] for i, name in enumerate(names_of_conv_layers)}
+            masks = self._remove_first_layers_in_selection(masks, model)
         indices = get_pruning_indices(masks)
 
         return indices
@@ -115,11 +138,10 @@ class LRPPruning(PruningSelection):
         device="cpu",
         skip_first_layers: int = None,
     ):
-        super().__init__()
+        super().__init__(skip_first_layers=skip_first_layers)
         self.num_filters = num_filters
         self.data_loader = data_loader
         self.device = device
-        self.skip_first_layers = skip_first_layers
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the LAP Pruning method."""
@@ -133,45 +155,31 @@ class LRPPruning(PruningSelection):
             y_test_true=y.to(self.device),
         )
 
-        names_of_conv_layers = get_names_of_conv_layers(model)
         if self.skip_first_layers:
-            names_of_conv_layers = names_of_conv_layers[self.skip_first_layers :]
-            indices = {
-                name: indices.get(name, None)
-                for name in names_of_conv_layers
-                if name in indices
-            }
+            indices = self._remove_first_layers_in_selection(indices, model)
 
         return indices
 
 
 class LnStructuredPruning(PruningSelection):
-    def __init__(self, pruning_ratio: float, skip_first_layers: int, norm: int=2):
-        super().__init__()
+    def __init__(self, pruning_ratio: float, skip_first_layers: int, norm: int=2, pruning_scope: str="layer"):
+        super().__init__(skip_first_layers=skip_first_layers)
         self.pruning_ratio = pruning_ratio
         self.norm = norm
-        self.skip_first_layers = skip_first_layers
+        self.pruning_scope = pruning_scope
 
-    # TODO: Maybe prune globally instead
     def select(self, model: nn.Module):
         indices = {}
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 scores = self._weight_norm(module)
-                # get indices of the highest scores according to the pruning ratio
                 num_filters = module.out_channels
                 num_to_prune = int(num_filters * self.pruning_ratio)
                 top_indices = torch.topk(scores, num_to_prune, largest=False).indices.tolist()
                 indices[name] = top_indices
         
-        names_of_conv_layers = get_names_of_conv_layers(model)
         if self.skip_first_layers:
-            names_of_conv_layers = names_of_conv_layers[self.skip_first_layers :]
-            indices = {
-                name: indices.get(name, None)
-                for name in names_of_conv_layers
-                if name in indices
-            }
+            indices = self._remove_first_layers_in_selection(indices, model)
 
         return indices
     

@@ -1,4 +1,3 @@
 name: ln_structured
 pruning_ratio: 0.3
-skip_first_layers: 3
 norm: 2
