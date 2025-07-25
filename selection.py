@@ -16,7 +16,7 @@ def get_selector(
     selector_config: DictConfig,
     data_loader: torch.utils.data.DataLoader | None = None,
     device: str | None = None,
-    skip_first_layers: int = 0,
+    skip_first_layers: int = 0
 ) -> "PruningSelection":
     """
     Factory function to get a pruning selection strategy based on the type.

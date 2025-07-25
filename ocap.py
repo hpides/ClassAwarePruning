@@ -10,7 +10,7 @@ def Compute_layer_mask(
     model,
     percent,
     device,
-    activation_func,
+    activation_func
 ):
     """
     :argument Calculate masks based on the input image
@@ -43,11 +43,12 @@ def Compute_layer_mask(
                 hook = next_module.register_forward_hook(mask_activation_hook)
                 hooks.append(hook)
       
-        batch_times = 0
-        for imgs, _ in imgs_dataloader:
-            imgs = imgs.to(device)
-            _ = model(imgs)
-            batch_times += 1
+        batch_times = 1
+        data_iter = iter(imgs_dataloader)
+        X, _ = next(data_iter)
+        _ = model(X.to(device))
+        
+
 
         for hook in hooks:
             hook.remove()

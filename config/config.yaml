@@ -1,22 +1,25 @@
 defaults:
-  - pruning: lrp  
-  - model: resnet18
+  - pruning: ocap  
+  - model: vgg16
   - dataset: cifar10
   - _self_
 
 selected_classes: [0,1,2]
 num_pruning_samples: 512
 replace_last_layer: true
-log_results: false
-run_name: null
-device: null
+log_results: true
+run_name: ocap_with_retrain_012_lowerlr
+device: "mps"
 resnet_zero_insertion: false
 
 training:
   train: false
-  batch_size_train: 256
-  batch_size_test: 256
+  retrain_after_pruning: true
+  retrain_epochs: 10
+  batch_size_train: 512
+  batch_size_test: 512
   lr: 0.001
+  lr_retrain: 0.00001
   weight_decay: 1e-5
   epochs: 50
   optimizer: adamw

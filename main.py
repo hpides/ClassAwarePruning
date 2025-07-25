@@ -24,6 +24,25 @@ import wandb
 import PIL
 
 
+def train(cfg: DictConfig, model, train_loader, test_loader, device, retrain=False):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = get_optimizer(
+            cfg.training.optimizer, model, cfg.training.lr if retrain else cfg.training.lr_retrain, cfg.training.weight_decay
+        )
+    model.to(device)
+
+    return train_model(
+        model=model,
+        model_name=cfg.model.name,
+        train_loader=train_loader,
+        test_loader=test_loader,
+        criterion=criterion,
+        optimizer=optimizer,
+        device=device,
+        num_epochs=cfg.training.epochs if not retrain else cfg.training.retrain_epochs,
+        log_results=cfg.log_results
+    )
+
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: DictConfig):
     wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
@@ -60,23 +79,7 @@ def main(cfg: DictConfig):
 
     # Train the model or load pretrained weights
     if cfg.training.train:
-        criterion = nn.CrossEntropyLoss()
-        optimizer = get_optimizer(
-            cfg.training.optimizer, model, cfg.training.lr, cfg.training.weight_decay
-        )
-        model.to(device)
-
-        train_model(
-            model=model,
-            model_name=cfg.model.name,
-            train_loader=train_loader,
-            test_loader=test_loader,
-            criterion=criterion,
-            optimizer=optimizer,
-            device=device,
-            num_epochs=cfg.training.epochs,
-            log_results=cfg.log_results
-        )
+       train(cfg, model, train_loader, test_loader, device)
     else:
         weights = torch.load(
             cfg.model.pretrained_weights_path, weights_only=True, map_location=device
@@ -84,7 +87,7 @@ def main(cfg: DictConfig):
         model.load_state_dict(weights)
         model.to(device)
 
-    subset_data_loader = get_CIFAR10_dataloaders(
+    subset_data_loader_train, subset_data_loader_test = get_CIFAR10_dataloaders(
         train_batch_size=cfg.training.batch_size_train,
         test_batch_size=cfg.training.batch_size_test,
         use_data_Augmentation=False,
@@ -96,7 +99,7 @@ def main(cfg: DictConfig):
 
     # Select the filters to prune
     selector = get_selector(
-        selector_config=cfg.pruning, data_loader=subset_data_loader, device=device, skip_first_layers=cfg.model.skip_first_layers
+        selector_config=cfg.pruning, data_loader=subset_data_loader_train, device=device, skip_first_layers=cfg.model.skip_first_layers
     )
     indices = selector.select(model=model)
     masks = get_pruning_masks(indices, model)
@@ -154,8 +157,24 @@ def main(cfg: DictConfig):
     accuracy_after = calculate_accuracy_for_selected_classes(
         class_accuracies_pruned, cfg.selected_classes
     )
+
     print(f"Accuracy before pruning: {accuracy_before:.2f}%")
     print(f"Accuracy after pruning: {accuracy_after:.2f}%")
+    
+    if cfg.training.retrain_after_pruning:
+        print("Retraining the pruned model...")
+        best_accuracy = train(
+            cfg,
+            pruned_model,
+            subset_data_loader_train,
+            subset_data_loader_test,
+            device,
+            retrain=True
+        )
+        wandb.log({
+            "best_accuracy_retraining": best_accuracy,
+        })
+
     model_size_before = get_model_size(model)
     model_size_after = get_model_size(pruned_model)
     inference_time_before = measure_inference_time(

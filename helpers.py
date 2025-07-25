@@ -67,13 +67,15 @@ def train_model(
         )
 
         # Save after 10 epochs and if accuracy improves
-        if (epoch + 1) >= 10 and test_accuracy > best_accuracy:
-            print(f"Saving model with improved accuracy: {test_accuracy:.2f}%")
+        if test_accuracy > best_accuracy:
             best_accuracy = test_accuracy
-            model_path = f"{model_name}_best_model_epoch_{epoch + 1}.pth"
-            torch.save(model.state_dict(), model_path)
+            if (epoch + 1) >= 10: 
+                print(f"Saving model with improved accuracy: {test_accuracy:.2f}%")
+                model_path = f"{model_name}_best_model_epoch_{epoch + 1}.pth"
+                torch.save(model.state_dict(), model_path)
 
     print("Training complete. Best accuracy achieved:", best_accuracy)
+    return best_accuracy
 
 
 def get_optimizer(name: str, model: nn.Module, lr: float, weight_decay: float = 0.0):

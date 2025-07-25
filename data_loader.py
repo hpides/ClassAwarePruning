@@ -43,20 +43,33 @@ def get_CIFAR10_dataloaders(
     if selected_classes:
         train_data_set.data = train_data_set.data
         train_data_set.targets = train_data_set.targets
-        indices = [
+        test_data_set.data = test_data_set.data
+        test_data_set.targets = test_data_set.targets
+        indices_train = [
             i
             for i, label in enumerate(train_data_set.targets)
             if label in selected_classes
         ]
-        indices = indices[:num_pruning_samples]
-        subset_dataset = Subset(train_data_set, indices)
+        indices_test = [
+            i
+            for i, label in enumerate(test_data_set.targets)
+            if label in selected_classes
+        ]
+        
+        subset_dataset_train = Subset(train_data_set, indices_train)
+        subset_dataset_test = Subset(test_data_set, indices_test)
 
         subset_train_data_loader = DataLoader(
-            subset_dataset,
+            subset_dataset_train,
+            batch_size=num_pruning_samples,
+            shuffle=False,  # Keep shuffle=False for deterministic ordering
+        )
+        subset_test_data_loader = DataLoader(
+            subset_dataset_test,
             batch_size=train_batch_size,
             shuffle=False,  # Keep shuffle=False for deterministic ordering
         )
-        return subset_train_data_loader
+        return subset_train_data_loader, subset_test_data_loader
 
     train_data_loader = DataLoader(
         train_data_set, batch_size=train_batch_size, shuffle=train_shuffle
