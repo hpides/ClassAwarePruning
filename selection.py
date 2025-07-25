@@ -44,7 +44,7 @@ def get_selector(
             skip_first_layers=skip_first_layers,
         )
     elif selector_config.name == "ln_structured":
-        return LnStructuredPruning(selector_config.pruning_ratio, skip_first_layers, selector_config.norm)
+        return LnStructuredPruning(selector_config.pruning_ratio, skip_first_layers, device, selector_config.norm, selector_config.pruning_scope)
 
 
 class PruningSelection(ABC):
@@ -162,22 +162,36 @@ class LRPPruning(PruningSelection):
 
 
 class LnStructuredPruning(PruningSelection):
-    def __init__(self, pruning_ratio: float, skip_first_layers: int, norm: int=2, pruning_scope: str="layer"):
+    def __init__(self, pruning_ratio: float, skip_first_layers: int, device: str, norm: int=2, pruning_scope: str="layer"):
         super().__init__(skip_first_layers=skip_first_layers)
         self.pruning_ratio = pruning_ratio
+        self.device = device
         self.norm = norm
         self.pruning_scope = pruning_scope
 
     def select(self, model: nn.Module):
+        model.to(self.device)
         indices = {}
+        scores_per_layer = {}
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
-                scores = self._weight_norm(module)
-                num_filters = module.out_channels
-                num_to_prune = int(num_filters * self.pruning_ratio)
-                top_indices = torch.topk(scores, num_to_prune, largest=False).indices.tolist()
-                indices[name] = top_indices
+                layer_scores = self._weight_norm(module)
+                if self.pruning_scope == "global":
+                    scores_per_layer[name] = layer_scores
+                elif self.pruning_scope == "layer":  
+                    num_filters = len(layer_scores)
+                    num_to_prune = int(num_filters * self.pruning_ratio)
+                    top_indices = torch.topk(layer_scores, num_to_prune, largest=False).indices.tolist()
+                    indices[name] = top_indices
         
+        if self.pruning_scope == "global":
+            scores = torch.cat(list(scores_per_layer.values()))
+            scores = scores.sort().values
+            threshold_element = scores[int(len(scores) * self.pruning_ratio)]
+            for name, scores in scores_per_layer.items():
+                top_indices = (scores < threshold_element).nonzero(as_tuple=False).squeeze(1).tolist()
+                indices[name] = top_indices
+       
         if self.skip_first_layers:
             indices = self._remove_first_layers_in_selection(indices, model)
 
