@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from data_loader import get_CIFAR10_dataloaders
+from data_loader import dataloaderFactorys
 from metrics import (
     get_parameter_ratio,
     calculate_model_accuracy,
@@ -29,6 +29,7 @@ def train(cfg: DictConfig, model, train_loader, test_loader, device, retrain=Fal
     optimizer = get_optimizer(
             cfg.training.optimizer, model, cfg.training.lr if retrain else cfg.training.lr_retrain, cfg.training.weight_decay
         )
+        
     model.to(device)
 
     return train_model(
@@ -57,6 +58,13 @@ def main(cfg: DictConfig):
     wandb_cfg["device"] = device
     print(f"Using device: {device}")
 
+    dataloader_factory = dataloaderFactorys[cfg.dataset.name](
+        train_batch_size=cfg.training.batch_size_train,
+        test_batch_size=cfg.training.batch_size_test,
+        selected_classes=cfg.selected_classes,
+        num_pruning_samples=cfg.num_pruning_samples
+    )
+
     if cfg.log_results:
         wandb.init(
             project="ClassAwarePruning",
@@ -65,37 +73,23 @@ def main(cfg: DictConfig):
             name=cfg.run_name,
         )
 
-    train_loader, test_loader = get_CIFAR10_dataloaders(
-        train_batch_size=cfg.training.batch_size_train,
-        test_batch_size=cfg.training.batch_size_test,
-        use_data_Augmentation=True,
-        download=True,
-        train_shuffle=True,
-    )
+    train_loader, test_loader = dataloader_factory.get_dataloaders()
 
     model = get_model(
-        cfg.model.name, pretrained=True, num_classes=cfg.dataset.num_classes
+        cfg.model.name, pretrained=True, num_classes=cfg.dataset.num_classes, dataset_name=cfg.dataset.name
     )
 
     # Train the model or load pretrained weights
     if cfg.training.train:
        train(cfg, model, train_loader, test_loader, device)
-    else:
+    elif cfg.model.pretrained_weights_path:
         weights = torch.load(
             cfg.model.pretrained_weights_path, weights_only=True, map_location=device
         )
         model.load_state_dict(weights)
-        model.to(device)
-
-    subset_data_loader_train, subset_data_loader_test = get_CIFAR10_dataloaders(
-        train_batch_size=cfg.training.batch_size_train,
-        test_batch_size=cfg.training.batch_size_test,
-        use_data_Augmentation=False,
-        data_path="./data/cifar",
-        download=True,
-        selected_classes=cfg.selected_classes,
-        num_pruning_samples=cfg.num_pruning_samples,
-    )
+    
+    model.to(device)
+    subset_data_loader_train, subset_data_loader_test = dataloader_factory.get_subset_dataloaders()
 
     # Select the filters to prune
     selector = get_selector(
@@ -171,9 +165,10 @@ def main(cfg: DictConfig):
             device,
             retrain=True
         )
-        wandb.log({
-            "best_accuracy_retraining": best_accuracy,
-        })
+        if cfg.log_results:
+            wandb.log({
+                "best_accuracy_retraining": best_accuracy,
+            })
 
     model_size_before = get_model_size(model)
     model_size_after = get_model_size(pruned_model)
