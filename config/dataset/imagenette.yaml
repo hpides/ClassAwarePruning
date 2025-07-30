@@ -1,2 +1,3 @@
 name: imagenette
-num_classes: 10
+num_classes: 1000
+use_imagenet_labels: true

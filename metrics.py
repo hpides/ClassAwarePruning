@@ -58,9 +58,7 @@ def calculate_model_accuracy(
                 accuracy_i = 100 * class_correct[i] / class_total[i]
                 class_accuracies[i] = accuracy_i
                 print(f"Accuracy of class {i}: {accuracy_i:.2f}%")
-            else:
-                print(f"Class {i} has no samples in the test set.")
-
+            
     return accuracy, class_accuracies
 
 

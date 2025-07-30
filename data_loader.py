@@ -13,6 +13,7 @@ class DataLoaderFactory:
         train_shuffle: bool = True,
         selected_classes: List[int] = [],
         num_pruning_samples: int = 512,
+        use_imagenet_labels: bool | None= False
     ):
         self.train_batch_size = train_batch_size
         self.test_batch_size = test_batch_size
@@ -21,6 +22,7 @@ class DataLoaderFactory:
         self.train_shuffle = train_shuffle
         self.selected_classes = selected_classes
         self.num_pruning_samples = num_pruning_samples
+        self.use_imagenet_labels = use_imagenet_labels
 
         self._initialize_datasets()
 
@@ -111,6 +113,7 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs) 
+    
 
     def _initialize_datasets(self):
         mean = [0.485, 0.456, 0.406]
@@ -123,6 +126,7 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
                 transforms.ToTensor(),
                 transforms.Normalize(mean, std),
                 transforms.RandomHorizontalFlip(),
+                transforms.RandomResizedCrop(224),
             ]
         )
 
@@ -133,7 +137,16 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
         self.train_data_set = datasets.Imagenette(data_path,
                 transform=train_transform if self.use_data_Augmentation else test_transform, download=self.download, split="train",)
         self.test_data_set = datasets.Imagenette(data_path,
-                transform=test_transform, download=self.download, split="val")       
+                transform=test_transform, download=self.download, split="val")    
+
+        if self.use_imagenet_labels:
+            imagenette_classes = [0, 217, 482, 491, 497, 566, 569, 571, 574, 701]
+            self.train_data_set._samples = [
+                (img, imagenette_classes[label]) for img, label in self.train_data_set._samples
+            ]
+            self.test_data_set._samples = [
+                (img, imagenette_classes[label]) for img, label in self.test_data_set._samples
+            ]   
 
     def _get_selected_indices(self):
         indices_train = [index for index, (_, label) in enumerate(self.train_data_set._samples) if label in self.selected_classes]

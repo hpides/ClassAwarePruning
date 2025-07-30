@@ -48,7 +48,7 @@ def get_model(model_name: str, pretrained: bool, num_classes: int = 10, dataset_
         model = model_cls(weights=weights)
     else:
         model = model_cls(weights=None)
-    if dataset_name == "imagenette":
+    if dataset_name == "imagenette" and num_classes == 10:
         model = replace_last_layer_for_imagenette(model)
     elif num_classes != 1000:
         if model_name == "vgg16":
