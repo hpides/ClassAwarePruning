@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from typing import List
-
+import random
 
 class DataLoaderFactory:
 
@@ -122,7 +122,6 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
                 transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean, std),
-                #transforms.RandomCrop(64, padding=4),
                 transforms.RandomHorizontalFlip(),
             ]
         )
@@ -139,6 +138,9 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
     def _get_selected_indices(self):
         indices_train = [index for index, (_, label) in enumerate(self.train_data_set._samples) if label in self.selected_classes]
         indices_test = [index for index, (_, label) in enumerate(self.test_data_set._samples) if label in self.selected_classes]
+        random.seed(42)
+        random.shuffle(indices_train)
+        random.shuffle(indices_test)
         return indices_train, indices_test
     
 
