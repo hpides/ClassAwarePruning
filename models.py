@@ -2,6 +2,12 @@ import torch.nn as nn
 from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet50_Weights, ResNet152_Weights, VGG16_Weights, MobileNet_V2_Weights
 
+def replace_module(model, module_name, new_module):
+        parts = module_name.split(".")
+        parent = model
+        for name in parts[:-1]:
+            parent = getattr(parent, name)
+        setattr(parent, parts[-1], new_module)
 
 def replace_last_layer_for_imagenette(model):
     imagenette_classes = [0, 217, 482, 491, 497, 566, 569, 571, 574, 701]
@@ -15,7 +21,7 @@ def replace_last_layer_for_imagenette(model):
     if last_linear.bias is not None:
         new_linear.bias.data = last_linear.bias.data[imagenette_classes].clone()
 
-    setattr(model, name, new_linear)
+    replace_module(model, name, new_linear)
     return model
 
 def get_model(model_name: str, pretrained: bool, num_classes: int = 10, dataset_name=None) -> nn.Module:
