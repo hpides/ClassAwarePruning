@@ -76,7 +76,7 @@ def main(cfg: DictConfig):
     train_loader, test_loader = dataloader_factory.get_dataloaders()
 
     model = get_model(
-        cfg.model.name, pretrained=True, num_classes=cfg.dataset.num_classes, dataset_name=cfg.dataset.name
+        cfg.model.name, pretrained=cfg.training.use_pretrained_model, num_classes=cfg.dataset.num_classes, dataset_name=cfg.dataset.name
     )
 
     # Train the model or load pretrained weights
