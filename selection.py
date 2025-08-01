@@ -113,13 +113,14 @@ class OCAP(PruningSelection):
     def select(self, model: nn.Module):
         """Selects filters to prune based on the OCAP method."""
 
-        layer_masks, _ = Compute_layer_mask(
+        layer_masks, global_pruning_ratio = Compute_layer_mask(
             imgs_dataloader=self.data_loader,
             model=model,
             percent=self.pruning_ratio,
             device=self.device,
             activation_func=self.activation_func,
         )
+        self.global_pruning_ratio = global_pruning_ratio
 
         names_of_conv_layers = get_names_of_conv_layers(model)
         masks = dict(zip(names_of_conv_layers, layer_masks))
@@ -140,6 +141,7 @@ class LRPPruning(PruningSelection):
     ):
         super().__init__(skip_first_layers=skip_first_layers)
         self.pruning_ratio = pruning_ratio
+        self.global_pruning_ratio = pruning_ratio
         self.data_loader = data_loader
         self.device = device
 

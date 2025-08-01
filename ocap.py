@@ -64,7 +64,6 @@ def Compute_layer_mask(
 
         # ------ layer-by-layer
         masks = []
-        score_num_list = []
         # New activations are now a list of tensors, each tensor corresponds to a layer
         for layer_activations in new_activations:
             if activation_func is not None:
@@ -95,4 +94,7 @@ def Compute_layer_mask(
 
             masks.append(one_layer_mask)
 
-        return masks, score_num_list
+        all_filters = sum(len(mask) for mask in masks)
+        pruned_filters = all_filters - sum(mask.sum().item() for mask in masks)
+        global_pruning_ratio = pruned_filters / all_filters
+        return masks, global_pruning_ratio

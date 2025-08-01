@@ -97,6 +97,7 @@ def main(cfg: DictConfig):
         selector_config=cfg.pruning, data_loader=subset_data_loader_train, device=device, skip_first_layers=cfg.model.skip_first_layers
     )
     indices = selector.select(model=model)
+    print("Global pruning ratio:", selector.global_pruning_ratio)
     masks = get_pruning_masks(indices, model)
 
     if cfg.resnet_zero_insertion:
@@ -200,6 +201,7 @@ def main(cfg: DictConfig):
                 "model_size_after": model_size_after,
                 "model_size_ratio": model_size_after / model_size_before,
                 "parameter_ratio": get_parameter_ratio(model, pruned_model),
+                "gloabal_pruning_ratio": selector.global_pruning_ratio,
                 "class_accuracies_original": class_accuracies_original,
                 "class_accuracies_pruned": class_accuracies_pruned,
                 "inference_time_batch_before": inference_time_before,
