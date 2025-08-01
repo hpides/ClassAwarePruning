@@ -26,7 +26,7 @@ lrp_layer2method = {
 }
 
 
-def get_candidates_to_prune(model, num_filters_to_prune, X_test, y_test_true):
+def get_candidates_to_prune(model, pruning_ratio, X_test, y_test_true):
 
     lrp_model = copy.deepcopy(model)
     if isinstance(model, ResNet):
@@ -57,7 +57,7 @@ def get_candidates_to_prune(model, num_filters_to_prune, X_test, y_test_true):
         }
 
     pruner.normalize_ranks_per_layer()
-    return pruner.get_pruning_plan(num_filters_to_prune)
+    return pruner.get_pruning_plan(pruning_ratio)
 
 
 def train_epoch(X, y, pruner, model, optimizer=None, rank_filters=True):
@@ -206,10 +206,8 @@ class FilterPruner:
             v = v / torch.sum(v)  # torch.sum(v) = total number of dataset
             self.filter_ranks[i] = v.cpu()
 
-    def get_pruning_plan(self, num_filters_to_prune):
-        ranked_filters = self.lowest_ranking_filters(num_filters_to_prune)
-        assert len(ranked_filters) == num_filters_to_prune
-        assert len(set([x[:2] for x in ranked_filters])) == num_filters_to_prune
+    def get_pruning_plan(self, pruning_ratio):
+        ranked_filters = self.lowest_ranking_filters(pruning_ratio)
 
         ranked_filters = [x[:2] for x in ranked_filters]
         layer_to_filter_indices = {}
@@ -218,17 +216,23 @@ class FilterPruner:
 
         return layer_to_filter_indices
 
-    def lowest_ranking_filters(self, num):
+    def lowest_ranking_filters(self, pruning_ratio):
         data = []
+        num_filters = 0
 
+        # Each layer has a list of filter ranks 
         for i in sorted(self.filter_ranks.keys()):
+            num_filters += self.filter_ranks[i].size(0)
             for j in range(self.filter_ranks[i].size(0)):
                 data.append((i, j, self.filter_ranks[i][j]))
                 # data 변수에 모든 layer의 모든 filter의 값을 쭈욱 나열 시킨다.
 
+        num_filters_to_prune = int(num_filters * pruning_ratio)
+        # data = [(layer_name, filter_index, filter_rank), ...]
+        # Choose the num smallest filter ranks to prune
         filters_to_prune = nsmallest(
-            num, data, itemgetter(2)
-        )  # data list 내에서 가장 작은 수를 num(=512개) 만큼 뽑아서 리스트에 저장
+            num_filters_to_prune, data, itemgetter(2)
+        ) 
 
         return filters_to_prune
 

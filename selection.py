@@ -39,7 +39,7 @@ def get_selector(
         )
     elif selector_config.name == "lrp":
         return LRPPruning(
-            num_filters=selector_config.num_filters,
+            pruning_ratio=selector_config.pruning_ratio,
             data_loader=data_loader,
             skip_first_layers=skip_first_layers,
         )
@@ -133,13 +133,13 @@ class OCAP(PruningSelection):
 class LRPPruning(PruningSelection):
     def __init__(
         self,
-        num_filters: int,
+        pruning_ratio: float,
         data_loader: torch.utils.data.DataLoader,
         device="cpu",
         skip_first_layers: int = None,
     ):
         super().__init__(skip_first_layers=skip_first_layers)
-        self.num_filters = num_filters
+        self.pruning_ratio = pruning_ratio
         self.data_loader = data_loader
         self.device = device
 
@@ -150,7 +150,7 @@ class LRPPruning(PruningSelection):
 
         indices = get_candidates_to_prune(
             model=model.to(self.device),
-            num_filters_to_prune=self.num_filters,
+            pruning_ratio=self.pruning_ratio,
             X_test=X.to(self.device),
             y_test_true=y.to(self.device),
         )
