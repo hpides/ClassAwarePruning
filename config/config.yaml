@@ -1,7 +1,7 @@
 defaults:
   - pruning: ocap  
   - model: resnet18
-  - dataset: imagenette
+  - dataset: cifar10
   - _self_
 
 selected_classes: [0,1,2]
@@ -11,6 +11,7 @@ log_results: false
 run_name: resnet18_ocap
 device: null
 resnet_zero_insertion: false
+inference_with_onnx: false
 
 training:
   train: false

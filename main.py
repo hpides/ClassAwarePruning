@@ -175,10 +175,10 @@ def main(cfg: DictConfig):
     model_size_before = get_model_size(model)
     model_size_after = get_model_size(pruned_model)
     inference_time_before = measure_inference_time(
-        test_loader, model, device, cfg.training.batch_size_test
+        test_loader, model, device, cfg.training.batch_size_test, cfg.inference_with_onnx
     )
     inference_time_after = measure_inference_time(
-        test_loader, pruned_model, device, cfg.training.batch_size_test
+        test_loader, pruned_model, device, cfg.training.batch_size_test, cfg.inference_with_onnx
     )
 
     print(f"Batch Inference time before pruning: {inference_time_before}")

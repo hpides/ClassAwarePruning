@@ -6,6 +6,9 @@ from torch.utils.data import DataLoader
 from torch.profiler import profile, record_function, ProfilerActivity
 from datetime import datetime
 from statistics import mean
+import onnxruntime as ort
+import numpy as np
+import io
 
 
 def calculate_model_accuracy(
@@ -85,17 +88,51 @@ def get_model_size(model):
     return size
 
 
+def export_model_to_onnx(model: nn.Module, input_shape: tuple, device: str):
+    """Export the model to ONNX format."""
+    dummy_input = torch.randn(1, *input_shape).to(device)
+    f = io.BytesIO()
+    
+
+    torch.onnx.export(
+        model,
+        dummy_input,
+        f,
+        export_params=True,
+        opset_version=11,
+        do_constant_folding=True,
+        input_names=["input"],
+        output_names=["output"],
+        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+    )
+
+    onnx_model = f.getvalue()
+    return onnx_model
+
+
+
 def measure_inference_time(
-    data_loader: DataLoader, model: nn.Module, device: str, batch_size: int
+    data_loader: DataLoader, model: nn.Module, device: str, batch_size: int, with_onnx=True
 ):
     """Measure the inference time of the model."""
     times = []
-    # Warmup phase
     C, W, H = data_loader.dataset.__getitem__(0)[0].shape
-    warmup_data = torch.rand(batch_size, C, H, W).to(device)
+
+    if with_onnx:
+        model = export_model_to_onnx(model, (C, W, H), device)
+        session_options = ort.SessionOptions()
+        session_options.intra_op_num_threads = 1
+        session_options.inter_op_num_threads = 1
+        session = ort.InferenceSession(model, providers=["CUDAExecutionProvider"] if device.type == "cuda" else ["CPUExecutionProvider"], sess_options=session_options)
+        model_func = lambda x: session.run(None, {"input": x.cpu().numpy()}) 
+    else:
+        model.to(device)
+        model_func = lambda x: model(x)  
+   
+    warmup_data = torch.randn(batch_size, C, H, W).to(device)
     with torch.no_grad():
         for _ in range(10):
-            _ = model(warmup_data)
+            _ = model_func(warmup_data)
 
     for x, y in data_loader:
         x, y = x.to(device), y
@@ -103,7 +140,7 @@ def measure_inference_time(
         if device.type == "mps":
             start_time = time.time()
             torch.mps.synchronize() 
-            _ = model(x)
+            _ = model_func(x)
             torch.mps.synchronize() 
             end_time = time.time()
             times.append((end_time - start_time)*1000)  # Convert to ms
@@ -112,7 +149,7 @@ def measure_inference_time(
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
             ) as prof:
                 with record_function("model_inference"):
-                    _ = model(x)
+                    _ = model_func(x)
             for event in prof.key_averages():
                 if event.key == "model_inference":
                     if device.type == "cuda":
