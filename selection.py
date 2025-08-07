@@ -76,22 +76,27 @@ class PruningSelection(ABC):
         
            
         
-
 class RandomSelection(PruningSelection):
     def __init__(self, pruning_ratio: float):
         super().__init__()
         self.pruning_ratio = pruning_ratio
+        self.global_pruning_ratio = 0
 
     def select(self, model: nn.Module):
         """Selects a random subset of filters to prune based on the specified pruning ratio."""
 
         selected_filters = {}
+        num_all_filters = 0
+        num_pruned_filters = 0
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 num_filters = module.out_channels
+                num_all_filters += num_filters
                 num_to_prune = int(num_filters * self.pruning_ratio)
+                num_pruned_filters += num_to_prune
                 filters_to_prune = random.sample(range(num_filters), num_to_prune)
                 selected_filters[name] = filters_to_prune
+        self.global_pruning_ratio = num_pruned_filters / num_all_filters if num_all_filters > 0 else 0
         return selected_filters
 
 
@@ -170,11 +175,14 @@ class LnStructuredPruning(PruningSelection):
         self.device = device
         self.norm = norm
         self.pruning_scope = pruning_scope
+        self.global_pruning_ratio = pruning_ratio if pruning_scope == "global" else None
 
     def select(self, model: nn.Module):
         model.to(self.device)
         indices = {}
         scores_per_layer = {}
+        num_all_filters = 0
+        num_pruned_filters = 0
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 layer_scores = self._weight_norm(module)
@@ -182,7 +190,9 @@ class LnStructuredPruning(PruningSelection):
                     scores_per_layer[name] = layer_scores
                 elif self.pruning_scope == "layer":  
                     num_filters = len(layer_scores)
+                    num_all_filters += num_filters
                     num_to_prune = int(num_filters * self.pruning_ratio)
+                    num_pruned_filters += num_to_prune
                     top_indices = torch.topk(layer_scores, num_to_prune, largest=False).indices.tolist()
                     indices[name] = top_indices
         
@@ -193,6 +203,8 @@ class LnStructuredPruning(PruningSelection):
             for name, scores in scores_per_layer.items():
                 top_indices = (scores < threshold_element).nonzero(as_tuple=False).squeeze(1).tolist()
                 indices[name] = top_indices
+        else:
+            self.global_pruning_ratio = num_pruned_filters / num_all_filters if num_all_filters > 0 else 0
        
         if self.skip_first_layers:
             indices = self._remove_first_layers_in_selection(indices, model)
