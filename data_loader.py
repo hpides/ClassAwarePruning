@@ -53,7 +53,7 @@ class DataLoaderFactory:
         subset_train_data_loader = DataLoader(
             subset_dataset_train,
             batch_size=self.num_pruning_samples,
-            shuffle=False,  # Keep shuffle=False for deterministic ordering
+            shuffle=False, 
         )
         subset_test_data_loader = DataLoader(
             subset_dataset_test,
@@ -155,9 +155,54 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
         random.shuffle(indices_train)
         random.shuffle(indices_test)
         return indices_train, indices_test
+
+
+class Imagenet_Dataloader_Factory(DataLoaderFactory):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+    def _initialize_datasets(self):
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+
+        train_transform = transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomResizedCrop(224),
+            ]
+        )
+
+        test_transform = transforms.Compose(
+            [transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize(mean, std)]
+        )
+
+        self.train_data_set = datasets.ImageFolder("/sc/dhc-cold/dsets/imagenet2012/train", transform=train_transform)
+        self.test_data_set = datasets.ImageFolder("/sc/dhc-cold/dsets/imagenet2012/val", transform=test_transform) 
+
     
+    def _get_selected_indices(self):
+        indices_train = [
+            i
+            for i, label in enumerate(self.train_data_set.targets)
+            if label in self.selected_classes
+        ]
+        indices_test = [
+            i
+            for i, label in enumerate(self.test_data_set.targets)
+            if label in self.selected_classes
+        ]
+        random.seed(42)
+        random.shuffle(indices_train)
+        random.shuffle(indices_test)
+        return indices_train, indices_test
+  
 
 dataloaderFactorys = {
     "cifar10": CIFAR10_DataLoaderFactory,
     "imagenette": Imagenette_DataLoaderFactory,
+    "imagenet": Imagenet_Dataloader_Factory
 }
