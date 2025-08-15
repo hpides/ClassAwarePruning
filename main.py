@@ -7,7 +7,7 @@ from metrics import (
     get_parameter_ratio,
     calculate_model_accuracy,
     get_model_size,
-    measure_inference_time,
+    measure_inference_time_and_accuracy,
     calculate_accuracy_for_selected_classes,
 )
 from helpers import (
@@ -57,6 +57,8 @@ def main(cfg: DictConfig):
 
     wandb_cfg["device"] = device
     print(f"Using device: {device}")
+    print(torch.cuda.current_device())
+
 
     dataloader_factory = dataloaderFactorys[cfg.dataset.name](
         train_batch_size=cfg.training.batch_size_train,
@@ -125,27 +127,33 @@ def main(cfg: DictConfig):
 
     # Evaluate the model before and after pruning
     print("Before pruning:")
+    torch.cuda.empty_cache()
     model.to(device)
     pruned_model.to(device)
-    _, class_accuracies_original = calculate_model_accuracy(
+    accuracy_original, class_accuracies_original, inference_time_before = measure_inference_time_and_accuracy(
+        subset_data_loader_test,
         model,
         device,
-        test_loader,
-        print_results=True,
+        cfg.training.batch_size_test,
+        cfg.dataset.num_classes,
         all_classes=True,
-        num_classes=cfg.dataset.num_classes,
+        print_results=True,
+        selected_classes=None,
+        with_onnx=cfg.inference_with_onnx
     )
     print("After pruning:")
-    _, class_accuracies_pruned = calculate_model_accuracy(
+    accuracy_pruned, class_accuracies_pruned, inference_time_after = measure_inference_time_and_accuracy(
+        subset_data_loader_test,
         pruned_model,
         device,
-        test_loader,
-        print_results=True,
+        cfg.training.batch_size_test,
+        cfg.dataset.num_classes,
         all_classes=True,
+        print_results=True,
         selected_classes=(
             cfg.selected_classes.copy() if cfg.replace_last_layer else None
         ),
-        num_classes=cfg.dataset.num_classes,
+        with_onnx=cfg.inference_with_onnx
     )
     accuracy_before = calculate_accuracy_for_selected_classes(
         class_accuracies_original, cfg.selected_classes
@@ -174,12 +182,7 @@ def main(cfg: DictConfig):
 
     model_size_before = get_model_size(model)
     model_size_after = get_model_size(pruned_model)
-    inference_time_before = measure_inference_time(
-        test_loader, model, device, cfg.training.batch_size_test, cfg.inference_with_onnx
-    )
-    inference_time_after = measure_inference_time(
-        test_loader, pruned_model, device, cfg.training.batch_size_test, cfg.inference_with_onnx
-    )
+   
 
     print(f"Batch Inference time before pruning: {inference_time_before}")
     print(f"Batch Inference time after pruning: {inference_time_after}")

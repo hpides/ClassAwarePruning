@@ -25,6 +25,8 @@ def calculate_model_accuracy(
     correct = 0
     total = 0
     if selected_classes:
+        # When the last layer is replaced to only predict the selected classses we 
+        # need to map the model's output to the correct classes
         other_classes = set(range(num_classes)) - set(selected_classes)
         selected_classes.extend(list(other_classes))
         selected_classes = torch.tensor(selected_classes).to(device)
@@ -111,10 +113,20 @@ def export_model_to_onnx(model: nn.Module, input_shape: tuple, device: str):
 
 
 
-def measure_inference_time(
-    data_loader: DataLoader, model: nn.Module, device: str, batch_size: int, with_onnx=True
+def measure_inference_time_and_accuracy(
+    data_loader: DataLoader, model: nn.Module, device: str, batch_size: int, num_classes: int, all_classes: bool, print_results: bool, selected_classes=None, with_onnx=False,
 ):
-    """Measure the inference time of the model."""
+    model.eval()
+    correct = 0
+    total = 0
+    if selected_classes:
+        # When the last layer is replaced to only predict the selected classses we 
+        # need to map the model's output to the correct classes
+        other_classes = set(range(num_classes)) - set(selected_classes)
+        selected_classes.extend(list(other_classes))
+        selected_classes = torch.tensor(selected_classes).to(device)
+    class_correct = [0] * num_classes
+    class_total = [0] * num_classes
     times = []
     C, W, H = data_loader.dataset.__getitem__(0)[0].shape
 
@@ -134,13 +146,13 @@ def measure_inference_time(
         for _ in range(10):
             _ = model_func(warmup_data)
 
-    for x, y in data_loader:
-        x, y = x.to(device), y
+    for input, labels in data_loader:
+        input, labels = input.to(device), labels.to(device)
 
         if device.type == "mps":
             start_time = time.time()
             torch.mps.synchronize() 
-            _ = model_func(x)
+            output = model_func(input)
             torch.mps.synchronize() 
             end_time = time.time()
             times.append((end_time - start_time)*1000)  # Convert to ms
@@ -149,13 +161,38 @@ def measure_inference_time(
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
             ) as prof:
                 with record_function("model_inference"):
-                    _ = model_func(x)
+                    output = model_func(input)
             for event in prof.key_averages():
                 if event.key == "model_inference":
                     if device.type == "cuda":
                         times.append(event.device_time_total / 1000)  # Convert to ms
                     else:
                         times.append(event.cpu_time_total / 1000)  # Convert to ms
-    return mean(times) if times else 0
+            
+        _, predicted = torch.max(output.data, 1)
+        predicted = (
+            selected_classes[predicted]
+            if selected_classes is not None
+            else predicted
+        )
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+        c = (predicted == labels).squeeze()
+        for i in range(labels.size(0)):
+            label = labels[i]
+            class_correct[label] += c[i].item()
+            class_total[label] += 1
+
+    accuracy = 100 * correct / total 
+    class_accuracies = {}
+    if all_classes and print_results:
+        for i in range(num_classes):
+            if class_total[i] > 0:
+                accuracy_i = 100 * class_correct[i] / class_total[i]
+                class_accuracies[i] = accuracy_i
+                print(f"Accuracy of class {i}: {accuracy_i:.2f}%")  
+
+    inference_time = mean(times) if times else 0         
+    return accuracy, class_accuracies, inference_time
 
 
