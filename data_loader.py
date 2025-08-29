@@ -8,7 +8,7 @@ class DataLoaderFactory:
     def __init__(self, 
         train_batch_size: int,
         test_batch_size: int,
-        use_data_Augmentation: bool = True,
+        use_data_augmentation: bool = False,
         download: bool = True,
         train_shuffle: bool = True,
         selected_classes: List[int] = [],
@@ -17,7 +17,7 @@ class DataLoaderFactory:
     ):
         self.train_batch_size = train_batch_size
         self.test_batch_size = test_batch_size
-        self.use_data_Augmentation = use_data_Augmentation
+        self.use_data_Augmentation = use_data_augmentation
         self.download = download
         self.train_shuffle = train_shuffle
         self.selected_classes = selected_classes
