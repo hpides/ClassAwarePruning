@@ -136,7 +136,7 @@ def measure_inference_time_and_accuracy(
         session_options.intra_op_num_threads = 1
         session_options.inter_op_num_threads = 1
         session = ort.InferenceSession(model, providers=["CUDAExecutionProvider"] if device.type == "cuda" else ["CPUExecutionProvider"], sess_options=session_options)
-        model_func = lambda x: session.run(None, {"input": x.cpu().numpy()}) 
+        model_func = lambda x: session.run(None, {"input": x.cpu().numpy()})[0] 
     else:
         model.to(device)
         model_func = lambda x: model(x)  
