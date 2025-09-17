@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 import random
+import numpy as np
 from abc import ABC, abstractmethod
 from ocap import Compute_layer_mask
 from lrp import get_candidates_to_prune
@@ -10,6 +11,7 @@ from helpers import (
     get_pruning_indices,
 )
 from omegaconf import DictConfig
+from torchpruner.attributions import TaylorAttributionMetric, APoZAttributionMetric, SensitivityAttributionMetric
 
 
 def get_selector(
@@ -49,6 +51,14 @@ def get_selector(
         return CAP(
             pruning_ratio=selector_config.pruning_ratio,
             dataloader=data_loader,
+            device=device,
+            skip_first_layers=skip_first_layers,
+        )
+    elif selector_config.name == "torchpruner":
+        return TorchPrunerAttributions(
+            pruning_ratio=selector_config.pruning_ratio,
+            dataloader=data_loader,
+            attribution=selector_config.attribution,
             device=device,
             skip_first_layers=skip_first_layers,
         )
@@ -193,6 +203,7 @@ class LnStructuredPruning(PruningSelection):
         self.norm = norm
         self.pruning_scope = pruning_scope
 
+
     def select(self, model: nn.Module):
         model.to(self.device)
         indices = {}
@@ -280,3 +291,32 @@ class CAP(PruningSelection):
         for handle in model_handles:
             handle.remove()
 
+
+class TorchPrunerAttributions(PruningSelection):
+    def __init__(self, pruning_ratio: float, dataloader: torch.utils.data.DataLoader, attribution: str, device: str, skip_first_layers: int = 0):
+        super().__init__(skip_first_layers=skip_first_layers)
+        self.pruning_ratio = pruning_ratio
+        self.device = device
+        self.data_loader = dataloader
+        self.attribution = {"taylor": TaylorAttributionMetric,
+                            "apoz": APoZAttributionMetric,
+                            "sensitivity": SensitivityAttributionMetric}[attribution]
+
+
+    def select(self, model: nn.Module):
+        indices = {}
+        for name, module in model.named_modules():
+            if isinstance(module, nn.Conv2d):
+                attr = self.attribution(model, self.data_loader, nn.CrossEntropyLoss(), self.device)
+                scores = attr.run(module)
+                num_filters = len(scores)
+                num_to_prune = int(num_filters * self.pruning_ratio)
+                top_indices = np.argsort(scores)[:num_to_prune].tolist()
+                indices[name] = top_indices
+        
+        if self.skip_first_layers:
+            indices = self._remove_first_layers_in_selection(indices, model)
+
+        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
+        
+        return indices
