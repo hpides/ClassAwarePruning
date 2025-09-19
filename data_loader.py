@@ -38,6 +38,18 @@ class DataLoaderFactory:
         )
         return train_data_loader, test_data_loader
 
+    def get_small_train_loader(self):
+        indices = list(range(len(self.train_data_set)))
+        random.seed(42)
+        random.shuffle(indices)
+        indices = indices[:self.num_pruning_samples]
+        subset_dataset_train = Subset(self.train_data_set, indices)
+        return DataLoader(
+            subset_dataset_train,
+            batch_size=self.train_batch_size,
+            shuffle=False,  # Keep shuffle=False for deterministic ordering
+        )
+
     def _get_selected_indices(self):
         raise NotImplementedError("This method should be implemented by subclasses.")
 

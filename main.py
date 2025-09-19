@@ -85,7 +85,7 @@ def main(cfg: DictConfig):
     # Train the model or load pretrained weights
     if cfg.training.train:
        train(cfg, model, train_loader, test_loader, device)
-    elif cfg.model.pretrained_weights_path:
+    elif cfg.model.pretrained_weights_path and cfg.dataset.name != "imagenet":
         weights = torch.load(
             cfg.model.pretrained_weights_path, weights_only=True, map_location=device
         )
@@ -93,6 +93,8 @@ def main(cfg: DictConfig):
     
     model.to(device)
     subset_data_loader_train, subset_data_loader_test = dataloader_factory.get_subset_dataloaders()
+    if cfg.pruning.name == "torchpruner":
+        subset_data_loader_train = dataloader_factory.get_small_train_loader()
 
     # Select the filters to prune
     selector = get_selector(
