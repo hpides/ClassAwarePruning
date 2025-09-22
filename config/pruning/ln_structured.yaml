@@ -1,4 +1,4 @@
 name: ln_structured
 pruning_ratio: 0.3
-norm: 1
-pruning_scope: "global"  # or "layer"
+norm: 2
+pruning_scope: "layer"  # or "layer"
