@@ -52,6 +52,13 @@ def main(cfg: DictConfig):
         if torch.cuda.is_available()
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
+    # show which gpu is being used
+    print(f"Available devices: {torch.cuda.device_count()}")
+    print(f"Current device: {torch.cuda.current_device()}")
+
+    if cfg.pruning.pruning_ratio > 0.77 and cfg.model.name == "resnet18" and cfg.pruning.name == "lrp":
+        raise ValueError("Pruning ratio too high for resnet18, please choose a value <= 0.8")
+
     if cfg.device:
         device = torch.device(cfg.device)
 
@@ -184,6 +191,7 @@ def main(cfg: DictConfig):
 
     model_size_before = get_model_size(model)
     model_size_after = get_model_size(pruned_model)
+    parameter_ratio = get_parameter_ratio(model, pruned_model)
    
 
     print(f"Batch Inference time before pruning: {inference_time_before}")
@@ -196,7 +204,7 @@ def main(cfg: DictConfig):
     #     class_accuracies_original, class_accuracies_pruned, cfg.model.name
     # )
     #image = PIL.Image.open(image_path)
-    print(f"Parameter ratio after pruning: {get_parameter_ratio(model, pruned_model)}")
+    print(f"Pruned parameters ratio: {1 - parameter_ratio}")
     if cfg.log_results:
         wandb.log(
             {
@@ -205,7 +213,7 @@ def main(cfg: DictConfig):
                 "model_size_before": model_size_before,
                 "model_size_after": model_size_after,
                 "model_size_ratio": model_size_after / model_size_before,
-                "parameter_ratio": get_parameter_ratio(model, pruned_model),
+                "parameter_ratio": parameter_ratio,
                 "gloabal_pruning_ratio": selector.global_pruning_ratio,
                 "class_accuracies_original": class_accuracies_original,
                 "class_accuracies_pruned": class_accuracies_pruned,
@@ -214,7 +222,8 @@ def main(cfg: DictConfig):
                 "inference_time_ratio": inference_time_after / inference_time_before,
                 "inference_time_per_sample_before": inference_time_before
                 / cfg.training.batch_size_test,
-                "inference_time_per_sample_after": inference_time_after
+                "inference_time_per_sample_after": inference_time_after,
+                "pruned_parameters": 1 - parameter_ratio,
             }
         )
     if cfg.log_results:
