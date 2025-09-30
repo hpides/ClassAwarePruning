@@ -73,11 +73,10 @@ def Compute_layer_mask(
             layer_masks = torch.empty_like(layer_activations_score, dtype=torch.bool)
             # Iterate over each image's activations to compute the mask, shape of imgs_activations_score is [c]
             for idx, imgs_activations_score in enumerate(layer_activations_score):
-                sorted_tensor, _ = torch.sort(imgs_activations_score)
-                # Calculate the threshold index based on the percentage (prune x percent of channels)
-                threshold_index = min(int(len(sorted_tensor) * percent), len(sorted_tensor) - 1)
-                threshold = sorted_tensor[threshold_index]
-                one_img_mask = imgs_activations_score.gt(threshold) # Get all channels that are greater than the threshold
+                num_to_prune = min(int(len(imgs_activations_score) * percent), len(imgs_activations_score) - 1)
+                prune_indices = torch.argsort(imgs_activations_score)[:num_to_prune].tolist()
+                one_img_mask = torch.ones_like(imgs_activations_score, dtype=torch.bool)
+                one_img_mask[prune_indices] = 0
                 layer_masks[idx] = one_img_mask
 
             """
