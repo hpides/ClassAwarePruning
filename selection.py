@@ -267,7 +267,7 @@ class CAP(PruningSelection):
     
     def _select_filters_for_layer(self, index: int, num_to_prune: int):
         layer_activations = self.activations[index]
-        layer_activations_scores = layer_activations.norm(dim=(2, 3), p=2).mean(dim=0)
+        layer_activations_scores = layer_activations.norm(dim=(2, 3), p=1).mean(dim=0)
         _, sorted_indices = torch.sort(layer_activations_scores)
         top_indices = sorted_indices[:num_to_prune].tolist()
         return top_indices
@@ -279,9 +279,10 @@ class CAP(PruningSelection):
             self.activations.append(output.detach())
 
         model_handles = []
-        for name, module in model.named_modules():
+        for index, module in enumerate(model.modules()):
             if isinstance(module, nn.Conv2d):
-                handle = module.register_forward_hook(forward_hook)
+                next_module = list(model.modules())[index + 1]
+                handle = next_module.register_forward_hook(forward_hook)
                 model_handles.append(handle)
 
         for inputs, _ in self.data_loader:
