@@ -54,9 +54,6 @@ class DataLoaderFactory:
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     def get_subset_dataloaders(self):
-        if not self.selected_classes:
-            return self.get_dataloaders()
-        
         indices_train, indices_test = self._get_selected_indices()
         
         subset_dataset_train = Subset(self.train_data_set, indices_train)
@@ -192,7 +189,7 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
             [transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize(mean, std)]
         )
 
-        self.train_data_set = datasets.ImageFolder("/sc/dhc-cold/dsets/imagenet2012/train", transform=train_transform)
+        self.train_data_set = datasets.ImageFolder("/sc/dhc-cold/dsets/imagenet2012/train", transform=train_transform if self.use_data_Augmentation else test_transform)
         self.test_data_set = datasets.ImageFolder("/sc/dhc-cold/dsets/imagenet2012/val", transform=test_transform) 
 
     

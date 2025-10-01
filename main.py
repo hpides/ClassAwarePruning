@@ -69,7 +69,7 @@ def main(cfg: DictConfig):
     dataloader_factory = dataloaderFactorys[cfg.dataset.name](
         train_batch_size=cfg.training.batch_size_train,
         test_batch_size=cfg.training.batch_size_test,
-        selected_classes=None if cfg.pruning.name == "torchpruner" else cfg.selected_classes,
+        selected_classes=cfg.selected_classes,
         num_pruning_samples=cfg.num_pruning_samples,
         use_data_augmentation=cfg.training.use_data_augmentation,
         use_imagenet_labels=cfg.dataset.use_imagenet_labels if "use_imagenet_labels" in cfg.dataset else False
