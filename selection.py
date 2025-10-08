@@ -306,15 +306,23 @@ class TorchPrunerAttributions(PruningSelection):
 
     def select(self, model: nn.Module):
         indices = {}
+        all_scores = []
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 attr = self.attribution(model, self.data_loader, nn.CrossEntropyLoss(), self.device)
                 scores = attr.run(module)
-                num_filters = len(scores)
-                num_to_prune = int(num_filters * self.pruning_ratio)
-                top_indices = np.argsort(scores)[:num_to_prune].tolist()
-                indices[name] = top_indices
+                scores = scores / np.linalg.norm(scores, ord=2)  # L2 normalization
+                for index, score in enumerate(scores):
+                    all_scores.append((score, name, index))
         
+        all_scores.sort(key=lambda x: x[0])
+        num_to_prune = int(len(all_scores) * self.pruning_ratio)
+        for i in range(num_to_prune):
+            _, layer_name, filter_index = all_scores[i]
+            if layer_name not in indices:
+                indices[layer_name] = []
+            indices[layer_name].append(filter_index)
+
         if self.skip_first_layers:
             indices = self._remove_first_layers_in_selection(indices, model)
 
