@@ -1,3 +1,3 @@
 name: torchpruner
 pruning_ratio: 0.7
-attribution: sensitivity # taylor, apoz, sensitivity
+attribution: taylor # taylor, apoz, sensitivity
