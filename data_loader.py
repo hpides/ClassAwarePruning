@@ -208,10 +208,62 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
         random.shuffle(indices_train)
         random.shuffle(indices_test)
         return indices_train, indices_test
-  
+
+
+class GTSRB_DataLoaderFactory(DataLoaderFactory):
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def _initialize_datasets(self):
+        mean = [0.3403, 0.3121, 0.3214]
+        std = [0.2724, 0.2608, 0.2669]
+        data_path = "./data/gtsrb"
+
+        train_transform = transforms.Compose(
+            [
+                transforms.Resize((32, 32)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(32, padding=4),
+            ]
+        )
+
+        test_transform = transforms.Compose(
+            [transforms.Resize((32, 32)), transforms.ToTensor(), transforms.Normalize(mean,std)]
+        )
+
+        self.train_data_set = datasets.GTSRB(
+            data_path,
+            transform=train_transform if self.use_data_Augmentation else test_transform,
+            download=self.download,
+            split="train",
+        )
+        self.test_data_set = datasets.GTSRB(
+            data_path, transform=test_transform, download=self.download, split="test"
+        )
+        
+    def _get_selected_indices(self):
+        indices_train = [
+            i
+            for i, sample in enumerate(self.train_data_set._samples)
+            if sample[1] in self.selected_classes
+        ]
+        indices_test = [
+            i
+            for i, sample in enumerate(self.test_data_set._samples)
+            if sample[1] in self.selected_classes
+        ]
+        random.seed(42)
+        random.shuffle(indices_train)
+        random.shuffle(indices_test)
+        return indices_train, indices_test
+
 
 dataloaderFactorys = {
     "cifar10": CIFAR10_DataLoaderFactory,
     "imagenette": Imagenette_DataLoaderFactory,
-    "imagenet": Imagenet_Dataloader_Factory
+    "imagenet": Imagenet_Dataloader_Factory,
+    "gtsrb": GTSRB_DataLoaderFactory,
 }
