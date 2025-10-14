@@ -17,7 +17,8 @@ def train_model(
     device: str,
     scheduler=None,
     num_epochs=20,
-    log_results=False
+    log_results=False,
+    num_classes=10,
 ):
     """Function to train the model."""
     best_accuracy = 0.0
@@ -51,7 +52,7 @@ def train_model(
         epoch_acc_train = 100.0 * correct / total
 
         test_accuracy, _ = calculate_model_accuracy(
-            model, device, test_loader, print_results=False, all_classes=False
+            model, device, test_loader, print_results=False, all_classes=False, num_classes=num_classes
         )
 
         if log_results:

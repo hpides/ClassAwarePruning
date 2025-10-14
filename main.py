@@ -22,6 +22,7 @@ from selection import get_selector
 from models import get_model
 import wandb
 import PIL
+from fvcore.nn import FlopCountAnalysis
 
 
 def train(cfg: DictConfig, model, train_loader, test_loader, device, retrain=False):
@@ -41,7 +42,8 @@ def train(cfg: DictConfig, model, train_loader, test_loader, device, retrain=Fal
         optimizer=optimizer,
         device=device,
         num_epochs=cfg.training.epochs if not retrain else cfg.training.retrain_epochs,
-        log_results=cfg.log_results
+        log_results=cfg.log_results,
+        num_classes=cfg.dataset.num_classes,
     )
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -57,7 +59,7 @@ def main(cfg: DictConfig):
     print(f"Current device: {torch.cuda.current_device()}")
 
     if cfg.pruning.pruning_ratio > 0.77 and cfg.model.name == "resnet18" and cfg.pruning.name == "lrp":
-        raise ValueError("Pruning ratio too high for resnet18, please choose a value <= 0.8")
+        raise ValueError("Pruning ratio too high for resnet18, please choose a value < 0.77")
 
     if cfg.device:
         device = torch.device(cfg.device)
@@ -110,7 +112,8 @@ def main(cfg: DictConfig):
     indices = selector.select(model=model)
     print("Global pruning ratio:", selector.global_pruning_ratio)
     masks = get_pruning_masks(indices, model)
-
+    for key, values in indices.items():
+        print(f"{key}: {len(values)} filters to prune")
     if cfg.resnet_zero_insertion:
         pruner = StructuredPruner(
             model=model,
@@ -192,7 +195,13 @@ def main(cfg: DictConfig):
     model_size_before = get_model_size(model)
     model_size_after = get_model_size(pruned_model)
     parameter_ratio = get_parameter_ratio(model, pruned_model)
-   
+
+    # Flop Analysis
+    flops_before = FlopCountAnalysis(model, torch.randn(1, 3, 224, 224).to(device))
+    flops_after = FlopCountAnalysis(pruned_model, torch.randn(1, 3, 224, 224).to(device))
+    print(f"FLOPs before pruning: {flops_before.total()/1e6} MFLOPs")
+    print(f"FLOPs after pruning: {flops_after.total()/1e6} MFLOPs")
+    print(f"FLOPs reduction ratio: {flops_after.total()/flops_before.total()}")
 
     print(f"Batch Inference time before pruning: {inference_time_before}")
     print(f"Batch Inference time after pruning: {inference_time_after}")
@@ -224,6 +233,9 @@ def main(cfg: DictConfig):
                 / cfg.training.batch_size_test,
                 "inference_time_per_sample_after": inference_time_after,
                 "pruned_parameters": 1 - parameter_ratio,
+                "flops_before": flops_before.total(),
+                "flops_after": flops_after.total(),
+                "flops_ratio": flops_after.total() / flops_before.total(),
             }
         )
     if cfg.log_results:
