@@ -22,6 +22,7 @@ def train_model(
 ):
     """Function to train the model."""
     best_accuracy = 0.0
+    best_epoch = 1
 
     for epoch in range(num_epochs):
         model.train()
@@ -70,13 +71,14 @@ def train_model(
         # Save after 10 epochs and if accuracy improves
         if test_accuracy > best_accuracy:
             best_accuracy = test_accuracy
+            best_epoch = epoch + 1
             if (epoch + 1) >= 10: 
                 print(f"Saving model with improved accuracy: {test_accuracy:.2f}%")
                 model_path = f"{model_name}_best_model_epoch_{epoch + 1}.pth"
                 torch.save(model.state_dict(), model_path)
 
     print("Training complete. Best accuracy achieved:", best_accuracy)
-    return best_accuracy
+    return best_accuracy, best_epoch
 
 
 def get_optimizer(name: str, model: nn.Module, lr: float, weight_decay: float = 0.0):

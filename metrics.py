@@ -196,3 +196,14 @@ def measure_inference_time_and_accuracy(
     return accuracy, class_accuracies, inference_time
 
 
+def measure_execution_time(selector, model):
+    times = []
+    for _ in range(1):
+        start = time.perf_counter()
+        indices = selector.select(model)
+        end = time.perf_counter()
+        times.append(end-start)
+
+    elapsed_time = mean(times)
+    print("time:", elapsed_time)
+    return indices, elapsed_time

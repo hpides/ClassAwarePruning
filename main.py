@@ -1,3 +1,4 @@
+import time
 import torch
 from torch import nn
 import hydra
@@ -5,7 +6,7 @@ from omegaconf import DictConfig, OmegaConf
 from data_loader import dataloaderFactorys
 from metrics import (
     get_parameter_ratio,
-    calculate_model_accuracy,
+    measure_execution_time,
     get_model_size,
     measure_inference_time_and_accuracy,
     calculate_accuracy_for_selected_classes,
@@ -54,9 +55,6 @@ def main(cfg: DictConfig):
         if torch.cuda.is_available()
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    # show which gpu is being used
-    print(f"Available devices: {torch.cuda.device_count()}")
-    print(f"Current device: {torch.cuda.current_device()}")
 
     if cfg.pruning.pruning_ratio > 0.77 and cfg.model.name == "resnet18" and cfg.pruning.name == "lrp":
         raise ValueError("Pruning ratio too high for resnet18, please choose a value < 0.77")
@@ -66,7 +64,6 @@ def main(cfg: DictConfig):
 
     wandb_cfg["device"] = device
     print(f"Using device: {device}")
-
 
     dataloader_factory = dataloaderFactorys[cfg.dataset.name](
         train_batch_size=cfg.training.batch_size_train,
@@ -103,13 +100,13 @@ def main(cfg: DictConfig):
     model.to(device)
     subset_data_loader_train, subset_data_loader_test = dataloader_factory.get_subset_dataloaders()
     if cfg.pruning.name == "torchpruner":
+        subset_data_loader_train_retrain = subset_data_loader_train
         subset_data_loader_train = dataloader_factory.get_small_train_loader()
-
     # Select the filters to prune
     selector = get_selector(
         selector_config=cfg.pruning, data_loader=subset_data_loader_train, device=device, skip_first_layers=cfg.model.skip_first_layers
     )
-    indices = selector.select(model=model)
+    indices, pruning_time = measure_execution_time(selector, model)
     print("Global pruning ratio:", selector.global_pruning_ratio)
     masks = get_pruning_masks(indices, model)
     for key, values in indices.items():
@@ -177,9 +174,13 @@ def main(cfg: DictConfig):
     print(f"Accuracy before pruning: {accuracy_before:.2f}%")
     print(f"Accuracy after pruning: {accuracy_after:.2f}%")
     
+    retraining_time = 0
     if cfg.training.retrain_after_pruning:
         print("Retraining the pruned model...")
-        best_accuracy = train(
+        if cfg.pruning.name == "torchpruner":
+            subset_data_loader_train = subset_data_loader_train_retrain
+        start = time.perf_counter()
+        best_accuracy, best_epoch = train(
             cfg,
             pruned_model,
             subset_data_loader_train,
@@ -187,9 +188,12 @@ def main(cfg: DictConfig):
             device,
             retrain=True
         )
+        end = time.perf_counter()
+        retraining_time = end - start
         if cfg.log_results:
             wandb.log({
                 "best_accuracy_retraining": best_accuracy,
+                "best_epoch_retraining": best_epoch,
             })
 
     model_size_before = get_model_size(model)
@@ -209,10 +213,6 @@ def main(cfg: DictConfig):
 
     print(f"Model size before pruning: {model_size_before} MB")
     print(f"Model size after pruning: {model_size_after} MB")
-    # image_path = plot_accuracies(
-    #     class_accuracies_original, class_accuracies_pruned, cfg.model.name
-    # )
-    #image = PIL.Image.open(image_path)
     print(f"Pruned parameters ratio: {1 - parameter_ratio}")
     if cfg.log_results:
         wandb.log(
@@ -236,6 +236,9 @@ def main(cfg: DictConfig):
                 "flops_before": flops_before.total(),
                 "flops_after": flops_after.total(),
                 "flops_ratio": flops_after.total() / flops_before.total(),
+                "pruning_time": pruning_time,
+                "retraining_time": retraining_time,
+                "total_time": pruning_time + retraining_time,
             }
         )
     if cfg.log_results:
