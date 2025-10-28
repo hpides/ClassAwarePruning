@@ -103,19 +103,16 @@ def main(cfg: DictConfig):
     selector = get_selector(
         selector_config=cfg.pruning, data_loader=subset_data_loader_train, device=device, skip_first_layers=cfg.model.skip_first_layers
     )
-    if cfg.pruning.pruning_ratio > 0:
-        all_indices, pruning_time = measure_execution_time(selector, model)
-        print("Global pruning ratio:", selector.global_pruning_ratio)
-    else:
-        all_indices = [dict()]
-        pruning_time = 0
+
+    all_indices, pruning_time = measure_execution_time(selector, model)
+    print("Global pruning ratio:", selector.global_pruning_ratio)
     
     if cfg.model.name.startswith("resnet"):
         all_indices = filter_pruning_indices_for_resnet(all_indices, cfg.model.name)
 
     for num, indices in enumerate(all_indices):
         print(f"Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
-        if cfg.pruning.pruning_ratio > 0:
+        if cfg.pruning.pruning_ratio[num] > 0:
             pruner = DepGraphPruner(
                 model=model,
                 indices=indices,
