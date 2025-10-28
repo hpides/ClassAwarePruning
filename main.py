@@ -106,24 +106,42 @@ def main(cfg: DictConfig):
 
     all_indices, pruning_time = measure_execution_time(selector, model)
     print("Global pruning ratio:", selector.global_pruning_ratio)
-    
+    # summarized_indices_per_layer = {}
+    # for ind in all_indices:
+    #     for layer_name, indices in ind.items():
+    #         if layer_name not in summarized_indices_per_layer:
+    #             summarized_indices_per_layer[layer_name] = []
+    #         summarized_indices_per_layer[layer_name].append(indices)
+    # for key, values in summarized_indices_per_layer.items():
+    #     print(f"Layer {key}")
+    #     last_val = []
+    #     for val in values:
+    #         #check if last_val is subset of val
+    #         if not set(last_val).issubset(set(val)):
+    #             print("false")
+    #         #print how many new indices are added
+    #         new_indices = set(val) - set(last_val)
+    #         print(f"Number of new indices added: {len(new_indices)}")
+    #         last_val = val
+
     if cfg.model.name.startswith("resnet"):
         all_indices = filter_pruning_indices_for_resnet(all_indices, cfg.model.name)
 
     for num, indices in enumerate(all_indices):
         print(f"Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
-        if cfg.pruning.pruning_ratio[num] > 0:
-            pruner = DepGraphPruner(
+        pruner = DepGraphPruner(
                 model=model,
                 indices=indices,
                 replace_last_layer=cfg.replace_last_layer,
                 selected_classes=cfg.selected_classes,
                 device=device,
             )
+        if cfg.pruning.pruning_ratio[num] > 0:
             pruned_model = pruner.prune()
             print("Model pruned successfully.")
         else:
-            pruned_model = model
+            pruner._replace_last_layer()
+            pruned_model = pruner.model
         # Evaluate the model before and after pruning
         print("Before pruning:")
         torch.cuda.empty_cache()
