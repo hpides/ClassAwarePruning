@@ -196,7 +196,7 @@ def measure_inference_time_and_accuracy(
     return accuracy, class_accuracies, inference_time
 
 
-def measure_execution_time(selector, model):
+def measure_execution_time(selector, model): # TODO: adjust for multiple pruning ratios
     times = []
     for _ in range(1):
         start = time.perf_counter()

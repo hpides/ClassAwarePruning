@@ -14,15 +14,12 @@ from metrics import (
 from helpers import (
     train_model,
     get_optimizer,
-    plot_accuracies,
-    get_pruning_masks,
     filter_pruning_indices_for_resnet,
 )
-from pruner import StructuredPruner, DepGraphPruner
+from pruner import DepGraphPruner
 from selection import get_selector
 from models import get_model
 import wandb
-import PIL
 from fvcore.nn import FlopCountAnalysis
 
 
@@ -106,27 +103,30 @@ def main(cfg: DictConfig):
     selector = get_selector(
         selector_config=cfg.pruning, data_loader=subset_data_loader_train, device=device, skip_first_layers=cfg.model.skip_first_layers
     )
-    all_indices, pruning_time = measure_execution_time(selector, model)
-    print("Global pruning ratio:", selector.global_pruning_ratio)
-    # for key, values in indices.items():
-    #     print(f"{key}: {len(values)} filters to prune")
+    if cfg.pruning.pruning_ratio > 0:
+        all_indices, pruning_time = measure_execution_time(selector, model)
+        print("Global pruning ratio:", selector.global_pruning_ratio)
+    else:
+        all_indices = [dict()]
+        pruning_time = 0
     
     if cfg.model.name.startswith("resnet"):
         all_indices = filter_pruning_indices_for_resnet(all_indices, cfg.model.name)
 
     for num, indices in enumerate(all_indices):
         print(f"Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
-        pruner = DepGraphPruner(
-            model=model,
-            indices=indices,
-            replace_last_layer=cfg.replace_last_layer,
-            selected_classes=cfg.selected_classes,
-            device=device,
-        )
-
-        pruned_model = pruner.prune()
-        print("Model pruned successfully.")
-
+        if cfg.pruning.pruning_ratio > 0:
+            pruner = DepGraphPruner(
+                model=model,
+                indices=indices,
+                replace_last_layer=cfg.replace_last_layer,
+                selected_classes=cfg.selected_classes,
+                device=device,
+            )
+            pruned_model = pruner.prune()
+            print("Model pruned successfully.")
+        else:
+            pruned_model = model
         # Evaluate the model before and after pruning
         print("Before pruning:")
         torch.cuda.empty_cache()
