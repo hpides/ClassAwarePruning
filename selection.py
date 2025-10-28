@@ -209,8 +209,10 @@ class LnStructuredPruning(PruningSelection):
 
     def select(self, model: nn.Module):
         model.to(self.device)
-        indices = {}
+        indices = [{} for _ in range(len(self.pruning_ratio))]
+
         scores_per_layer = {}
+
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 layer_scores = self._weight_norm(module)
@@ -218,22 +220,26 @@ class LnStructuredPruning(PruningSelection):
                     scores_per_layer[name] = layer_scores
                 elif self.pruning_scope == "layer":  
                     num_filters = len(layer_scores)
-                    num_to_prune = int(num_filters * self.pruning_ratio)
-                    top_indices = torch.topk(layer_scores, num_to_prune, largest=False).indices.tolist()
-                    indices[name] = top_indices
+                    for index, ratio in enumerate(self.pruning_ratio):
+                        num_to_prune = int(num_filters * ratio)
+                        top_indices = torch.topk(layer_scores, num_to_prune, largest=False).indices.tolist()
+                        indices[index][name] = top_indices
         
         if self.pruning_scope == "global":
             scores = torch.cat(list(scores_per_layer.values()))
             scores = scores.sort().values
-            threshold_element = scores[int(len(scores) * self.pruning_ratio)]
-            for name, scores in scores_per_layer.items():
-                top_indices = (scores < threshold_element).nonzero(as_tuple=False).squeeze(1).tolist()
-                indices[name] = top_indices
-       
-        if self.skip_first_layers:
-            indices = self._remove_first_layers_in_selection(indices, model)
+            for index, ratio in enumerate(self.pruning_ratio):
+                threshold_element = scores[int(len(scores) * ratio)]
+                for name, scores in scores_per_layer.items():
+                    top_indices = (scores < threshold_element).nonzero(as_tuple=False).squeeze(1).tolist()
+                    indices[index][name] = top_indices
+        
+        self.global_pruning_ratio = []
+        for index in range(len(indices)):
+            if self.skip_first_layers:
+                indices[index] = self._remove_first_layers_in_selection(indices[index], model)
 
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices[index], model))
 
         return indices
     
