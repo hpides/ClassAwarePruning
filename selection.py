@@ -12,6 +12,7 @@ from helpers import (
 )
 from omegaconf import DictConfig
 from torchpruner.attributions import TaylorAttributionMetric, APoZAttributionMetric, SensitivityAttributionMetric
+from typing import List, Tuple, Union
 
 
 def get_selector(
@@ -127,38 +128,40 @@ class RandomSelection(PruningSelection):
 class OCAP(PruningSelection):
     def __init__(
         self,
-        pruning_ratio: float,
+        pruning_ratio: List[float],
         data_loader: torch.utils.data.DataLoader,
         activation_func: str = "relu",
         device="mps",
         skip_first_layers: int = 1,
     ):
         super().__init__(skip_first_layers=skip_first_layers)
-        self.pruning_ratio = pruning_ratio
+        self.pruning_ratios = pruning_ratio
         self.data_loader = data_loader
         self.activation_func = get_activation_function(activation_func)
         self.device = device
+        self.global_pruning_ratio = []
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the OCAP method."""
 
-        layer_masks, _ = Compute_layer_mask(
+        all_layer_masks, _ = Compute_layer_mask(
             imgs_dataloader=self.data_loader,
             model=model,
-            percent=self.pruning_ratio,
+            ratios=self.pruning_ratios,
             device=self.device,
             activation_func=self.activation_func,
         )
-
         names_of_conv_layers = get_names_of_conv_layers(model)
-        masks = dict(zip(names_of_conv_layers, layer_masks))
-        if self.skip_first_layers:
-            masks = self._remove_first_layers_in_selection(masks, model)
-        indices = get_pruning_indices(masks)
-
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
-
-        return indices
+        all_indices = []
+        for layer_masks in all_layer_masks:
+            masks = dict(zip(names_of_conv_layers, layer_masks))
+            if self.skip_first_layers:
+                masks = self._remove_first_layers_in_selection(masks, model)
+            indices = get_pruning_indices(masks)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices, model))
+            all_indices.append(indices)
+            
+        return all_indices
 
 
 class LRPPruning(PruningSelection):

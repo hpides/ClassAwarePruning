@@ -168,13 +168,17 @@ def plot_accuracies(original_accuracies, pruned_accuracies, model_name):
     return image_path
 
 
-def filter_pruning_indices_for_resnet(indices: dict, model_name: str):
+def filter_pruning_indices_for_resnet(all_indices: dict, model_name: str):
     if model_name == "resnet152":
         save_layer = "conv3"
     else:
         save_layer = "conv2"
-    keys = list(indices.keys())
-    for key in keys:
-        if save_layer in key or "downsample" in key:
-            indices.pop(key, None)
-    return indices
+    new_indices = []
+    for indices in all_indices:
+        keys = list(indices.keys())
+        for key in keys:
+            if save_layer in key or "downsample" in key:
+                indices.pop(key, None)
+        new_indices.append(indices)
+    
+    return new_indices
