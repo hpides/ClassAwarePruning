@@ -190,12 +190,14 @@ class LRPPruning(PruningSelection):
             y_test_true=y.to(self.device),
         )
 
-        if self.skip_first_layers:
-            indices = self._remove_first_layers_in_selection(indices, model)
-        
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
+        all_indices = []
+        self.global_pruning_ratio = []
+        for indices_p in indices:
+            if self.skip_first_layers:
+                all_indices.append(self._remove_first_layers_in_selection(indices_p, model))
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices_p, model))
 
-        return indices
+        return all_indices
 
 
 class LnStructuredPruning(PruningSelection):
