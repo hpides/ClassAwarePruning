@@ -314,8 +314,9 @@ class TorchPrunerAttributions(PruningSelection):
 
 
     def select(self, model: nn.Module):
-        indices = {}
+        indices = []
         all_scores = []
+        self.global_pruning_ratio = []
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 attr = self.attribution(model, self.data_loader, nn.CrossEntropyLoss(), self.device)
@@ -325,16 +326,18 @@ class TorchPrunerAttributions(PruningSelection):
                     all_scores.append((score, name, index))
         
         all_scores.sort(key=lambda x: x[0])
-        num_to_prune = int(len(all_scores) * self.pruning_ratio)
-        for i in range(num_to_prune):
-            _, layer_name, filter_index = all_scores[i]
-            if layer_name not in indices:
-                indices[layer_name] = []
-            indices[layer_name].append(filter_index)
-
-        if self.skip_first_layers:
-            indices = self._remove_first_layers_in_selection(indices, model)
-
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
+        for ratio in self.pruning_ratio:
+            indices_d = {}
+            num_to_prune = int(len(all_scores) * ratio)
+            for i in range(num_to_prune):
+                _, layer_name, filter_index = all_scores[i]
+                if layer_name not in indices_d:
+                    indices_d[layer_name] = []
+                indices_d[layer_name].append(filter_index)
+            
+            if self.skip_first_layers:
+                indices_d = self._remove_first_layers_in_selection(indices_d, model)
+            indices.append(indices_d)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices_d, model))
         
         return indices
