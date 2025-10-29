@@ -192,9 +192,8 @@ def measure_inference_time_and_accuracy(
                 class_accuracies[i] = accuracy_i
                 print(f"Accuracy of class {i}: {accuracy_i:.2f}%")  
 
-    inference_time = mean(times) if times else 0   
-    inference_time_std = np.std(times) if times else 0     
-    return accuracy, class_accuracies, inference_time, inference_time_std
+    inference_time = mean(times) if times else 0     
+    return accuracy, class_accuracies, inference_time, times
 
 
 def measure_execution_time(selector, model): # TODO: adjust for multiple pruning ratios
