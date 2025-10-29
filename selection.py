@@ -31,7 +31,7 @@ def get_selector(
     """
 
     if selector_config.name == "random":
-        return RandomSelection(pruning_ratio=selector_config.pruning_ratio)
+        return RandomSelection(pruning_ratio=selector_config.pruning_ratio, skip_first_layers=skip_first_layers)
     elif selector_config.name == "ocap":
         return OCAP(
             pruning_ratio=selector_config.pruning_ratio,
@@ -107,22 +107,31 @@ class PruningSelection(ABC):
            
         
 class RandomSelection(PruningSelection):
-    def __init__(self, pruning_ratio: float):
+    def __init__(self, pruning_ratio: float, skip_first_layers: int = 0):
         super().__init__()
         self.pruning_ratio = pruning_ratio
+        self.skip_first_layers = skip_first_layers
 
     def select(self, model: nn.Module):
         """Selects a random subset of filters to prune based on the specified pruning ratio."""
+        
+        all_selections = []
+        self.global_pruning_ratio = []
+        for ratio in self.pruning_ratio:
+            indices = {}
+            for name, module in model.named_modules():
+                if isinstance(module, nn.Conv2d):
+                    num_filters = module.out_channels
+                    num_to_prune = int(num_filters * ratio)
+                    filters_to_prune = random.sample(range(num_filters), num_to_prune)
+                    indices[name] = filters_to_prune
 
-        selected_filters = {}
-        for name, module in model.named_modules():
-            if isinstance(module, nn.Conv2d):
-                num_filters = module.out_channels
-                num_to_prune = int(num_filters * self.pruning_ratio)
-                filters_to_prune = random.sample(range(num_filters), num_to_prune)
-                selected_filters[name] = filters_to_prune
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(selected_filters, model)
-        return selected_filters
+            if self.skip_first_layers:
+                indices = self._remove_first_layers_in_selection(indices, model)
+            all_selections.append(indices)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices, model))
+
+        return all_selections
 
 
 class OCAP(PruningSelection):
