@@ -246,6 +246,14 @@ class DepGraphPruner:
 
             if DG.check_pruning_group(group):  # avoid over-pruning, i.e., channels=0.
                 group.prune()
+            else:
+                indices.pop(0)
+                group = DG.get_pruning_group(
+                dict(self.model.named_modules())[name],
+                tp.prune_conv_out_channels,
+                idxs=indices,
+                )
+                group.prune()
 
         if self.replace_last_layer and self.selected_classes:
             self._replace_last_layer()
