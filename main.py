@@ -110,7 +110,6 @@ def main(cfg: DictConfig):
     if cfg.model.name.startswith("resnet"):
         all_indices = filter_pruning_indices_for_resnet(all_indices, cfg.model.name)
 
-    
 
     for num, indices in enumerate(all_indices):
         print(f"Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
@@ -232,8 +231,8 @@ def main(cfg: DictConfig):
                     "pruning_time": pruning_time,
                     "retraining_time": retraining_time,
                     "total_time": pruning_time + retraining_time,
-                    "inference_time_all_before": inference_time_before,
-                    "inference_time_all_after": inference_time_after
+                    "inference_time_all_before": inf_time_all_before,
+                    "inference_time_all_after": inf_time_all_after
                 }
             )
 
