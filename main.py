@@ -110,6 +110,8 @@ def main(cfg: DictConfig):
     if cfg.model.name.startswith("resnet"):
         all_indices = filter_pruning_indices_for_resnet(all_indices, cfg.model.name)
 
+    
+
     for num, indices in enumerate(all_indices):
         print(f"Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
         pruner = DepGraphPruner(
@@ -130,7 +132,7 @@ def main(cfg: DictConfig):
         torch.cuda.empty_cache()
         model.to(device)
         pruned_model.to(device)
-        _, class_accuracies_original, inference_time_before = measure_inference_time_and_accuracy(
+        _, class_accuracies_original, inference_time_before, inf_time_std_before = measure_inference_time_and_accuracy(
             subset_data_loader_test,
             model,
             device,
@@ -142,7 +144,7 @@ def main(cfg: DictConfig):
             with_onnx=cfg.inference_with_onnx
         )
         print("After pruning:")
-        _, class_accuracies_pruned, inference_time_after = measure_inference_time_and_accuracy(
+        _, class_accuracies_pruned, inference_time_after, inf_time_std_after = measure_inference_time_and_accuracy(
             subset_data_loader_test,
             pruned_model,
             device,
@@ -230,6 +232,8 @@ def main(cfg: DictConfig):
                     "pruning_time": pruning_time,
                     "retraining_time": retraining_time,
                     "total_time": pruning_time + retraining_time,
+                    "inference_time_std_before": inf_time_std_before,
+                    "inference_time_std_after": inf_time_std_after
                 }
             )
 
