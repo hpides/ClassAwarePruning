@@ -110,14 +110,23 @@ def main(cfg: DictConfig):
     if cfg.model.name.startswith("resnet"):
         all_indices = filter_pruning_indices_for_resnet(all_indices, cfg.model.name)
 
-
+    evaluation_classes = [30, 7, 10, 8, 18, 6, 22, 42] # random signs
+    dataloader_factory = dataloaderFactorys[cfg.dataset.name](
+        train_batch_size=cfg.training.batch_size_train,
+        test_batch_size=cfg.training.batch_size_test,
+        selected_classes=evaluation_classes,
+        num_pruning_samples=cfg.num_pruning_samples,
+        use_data_augmentation=cfg.training.use_data_augmentation,
+        use_imagenet_labels=cfg.dataset.use_imagenet_labels if "use_imagenet_labels" in cfg.dataset else False
+    )
+    subset_data_loader_train, subset_data_loader_test = dataloader_factory.get_subset_dataloaders()
     for num, indices in enumerate(all_indices):
         print(f"Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
         pruner = DepGraphPruner(
                 model=model,
                 indices=indices,
                 replace_last_layer=cfg.replace_last_layer,
-                selected_classes=cfg.selected_classes,
+                selected_classes=evaluation_classes,
                 device=device,
             )
         if cfg.pruning.pruning_ratio[num] > 0:
@@ -152,15 +161,15 @@ def main(cfg: DictConfig):
             all_classes=True,
             print_results=True,
             selected_classes=(
-                cfg.selected_classes.copy() if cfg.replace_last_layer else None
+                evaluation_classes.copy() if cfg.replace_last_layer else None
             ),
             with_onnx=cfg.inference_with_onnx
         )
         accuracy_before = calculate_accuracy_for_selected_classes(
-            class_accuracies_original, cfg.selected_classes
+            class_accuracies_original, evaluation_classes
         )
         accuracy_after = calculate_accuracy_for_selected_classes(
-            class_accuracies_pruned, cfg.selected_classes
+            class_accuracies_pruned, evaluation_classes
         )
 
         print(f"Accuracy before pruning: {accuracy_before:.2f}%")
