@@ -53,9 +53,6 @@ def main(cfg: DictConfig):
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
 
-    if max(cfg.pruning.pruning_ratio) > 0.77 and cfg.model.name == "resnet18" and cfg.pruning.name == "lrp":
-        raise ValueError("Pruning ratio too high for resnet18, please choose a value < 0.77")
-
     if cfg.device:
         device = torch.device(cfg.device)
 
@@ -168,6 +165,7 @@ def main(cfg: DictConfig):
         print(f"Accuracy after pruning: {accuracy_after:.2f}%")
         
         retraining_time = 0
+        best_accuracy, best_epoch = None, None
         if cfg.training.retrain_after_pruning:
             print("Retraining the pruned model...")
             if cfg.pruning.name == "torchpruner":
@@ -183,11 +181,7 @@ def main(cfg: DictConfig):
             )
             end = time.perf_counter()
             retraining_time = end - start
-            if cfg.log_results:
-                wandb.log({
-                    "best_accuracy_retraining": best_accuracy,
-                    "best_epoch_retraining": best_epoch,
-                })
+            
 
         model_size_before = get_model_size(model)
         model_size_after = get_model_size(pruned_model)
@@ -233,7 +227,9 @@ def main(cfg: DictConfig):
                     "retraining_time": retraining_time,
                     "total_time": pruning_time + retraining_time,
                     "inference_time_all_before": inf_time_all_before,
-                    "inference_time_all_after": inf_time_all_after
+                    "inference_time_all_after": inf_time_all_after,
+                    "best_accuracy_retraining": best_accuracy,
+                    "best_epoch_retraining": best_epoch,
                 }
             )
 
