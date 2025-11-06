@@ -45,6 +45,7 @@ def get_selector(
             pruning_ratio=selector_config.pruning_ratio,
             data_loader=data_loader,
             skip_first_layers=skip_first_layers,
+            device=device,
         )
     elif selector_config.name == "ln_structured":
         return LnStructuredPruning(selector_config.pruning_ratio, skip_first_layers, device, selector_config.norm, selector_config.pruning_scope)
