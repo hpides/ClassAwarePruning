@@ -196,7 +196,8 @@ def main(cfg: DictConfig):
 
         print(f"Batch Inference time before pruning: {inference_time_before}")
         print(f"Batch Inference time after pruning: {inference_time_after}")
-        print(f"Inference time ratio: {inference_time_after / inference_time_before}")
+        inference_time_ratio = (inference_time_after / inference_time_before) if inference_time_before > 0 else 0
+        print(f"Inference time ratio: {inference_time_ratio}")
 
         print(f"Model size before pruning: {model_size_before} MB")
         print(f"Model size after pruning: {model_size_after} MB")
@@ -215,7 +216,7 @@ def main(cfg: DictConfig):
                     "class_accuracies_pruned": class_accuracies_pruned,
                     "inference_time_batch_before": inference_time_before,
                     "inference_time_batch_after": inference_time_after,
-                    "inference_time_ratio": inference_time_after / inference_time_before,
+                    "inference_time_ratio": inference_time_ratio,
                     "inference_time_per_sample_before": inference_time_before
                     / cfg.training.batch_size_test,
                     "inference_time_per_sample_after": inference_time_after,
