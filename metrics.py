@@ -141,6 +141,7 @@ def measure_inference_time_and_accuracy(
         model.to(device)
         model_func = lambda x: model(x)  
    
+    torch.cuda.empty_cache() if device.type == "cuda" else None
     warmup_data = torch.randn(batch_size, C, H, W).to(device)
     with torch.no_grad():
         for _ in range(10):
@@ -161,7 +162,9 @@ def measure_inference_time_and_accuracy(
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
             ) as prof:
                 with record_function("model_inference"):
+                    torch.cuda.synchronize() if device.type == "cuda" else None
                     output = model_func(input)
+                    torch.cuda.synchronize() if device.type == "cuda" else None
             for event in prof.key_averages():
                 if event.key == "model_inference":
                     if device.type == "cuda":
