@@ -1,2 +1,2 @@
 name: random
-pruning_ratio: 0.2
+pruning_ratio: [0, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 0.9, 0.95]

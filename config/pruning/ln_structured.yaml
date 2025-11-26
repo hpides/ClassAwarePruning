@@ -1,4 +1,7 @@
 name: ln_structured
 pruning_ratio: 0.9
 norm: 1
-pruning_scope: "layer"  # or "layer"
+pruning_scope: "layer"  # or "global"
+
+# [0, 0.1,0.21,0.32,0.43,0.55,0.66,0.78,0.91] #cifar10, vgg16
+# [0, 0.1, 0.21,0.31,0.42,0.52,0.62,0.72,0.82,0.88,0.93] #cifar10, resnet18
