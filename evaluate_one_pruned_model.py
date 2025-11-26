@@ -3,7 +3,7 @@ import random
 import wandb
 import torch
 import torch.nn as nn
-from metrics import measure_inference_time_and_accuracy
+from metrics import measure_inference_time
 from data_loader import dataloaderFactorys
 from models import get_model
 from metrics import get_parameter_ratio
@@ -94,7 +94,7 @@ def measure(config):
             project="ClassAwarePruning",
             entity="smilla-fox",
             config=config,
-            tags=["test2"]
+            tags=["test_cpu"]
     )
 
     dataloader_factory = dataloaderFactorys[config["dataset.name"]](
@@ -118,34 +118,32 @@ def measure(config):
     if "lnstructured" in file_name:
         file_name = file_name.replace("lnstructured","ln_structured")
     weights = torch.load(
-        f"pruned_weights/{file_name}.pt", weights_only=True, map_location="cuda"
+        f"pruned_weights/{file_name}.pt", weights_only=True, map_location=config["device"]
     )
     model = adjust_model_for_pruned_weights(model, weights)
     model.load_state_dict(weights)
     print("Pruned model results:")
-    accuracy_new, _, inference_time_new, times_new = measure_inference_time_and_accuracy(
+    inference_time_new, times_new = measure_inference_time(
         data_loader=subset_test_loader,
-        model=model.to(torch.device("cuda")),
-        device=torch.device("cuda"),
+        model=model.to(torch.device(config["device"])),
+        device=torch.device(config["device"]),
         batch_size=config["batch_size"],
-        num_classes=config["num_classes"],
-        all_classes=True,
-        print_results=True,
-        selected_classes=config["selected_classes"],
-        with_onnx=False
     )
+    peak_memory_new = 0
+    peak_memory_old = 0 
+    memory_ratio = 0
+    if config["device"] == "cuda":
+        peak_memory_new = memory_usage(model.to(torch.device(config["device"])), subset_test_loader, torch.device(config["device"]))
+        peak_memory_old = memory_usage(original_model.to(torch.device(config["device"])), subset_test_loader, torch.device(config["device"]))
+        memory_ratio = (peak_memory_new / peak_memory_old) if peak_memory_old > 0 else 0
+        print(f"Peak Memory Usage - Pruned Model: {peak_memory_new:.2f} MB")
+        print(f"Peak Memory Usage - Original Model: {peak_memory_old:.2f} MB")
 
-    peak_memory_new = memory_usage(model.to(torch.device("cuda")), subset_test_loader, torch.device("cuda"))
-    peak_memory_old = memory_usage(original_model.to(torch.device("cuda")), subset_test_loader, torch.device("cuda"))
-    memory_ratio = (peak_memory_new / peak_memory_old) if peak_memory_old > 0 else 0
     parameter_ratio = get_parameter_ratio(original_model,model)
-    print(f"Peak Memory Usage - Pruned Model: {peak_memory_new:.2f} MB")
-    print(f"Peak Memory Usage - Original Model: {peak_memory_old:.2f} MB")
-
+  
     wandb.log({
         "inference_time_all_after": times_new,
         "inference_time_batch_after": inference_time_new,
-        "accuracy_after": accuracy_new,
         "memory_after": peak_memory_new,
         "memory_before": peak_memory_old,
         "memory_ratio": memory_ratio,
@@ -185,6 +183,7 @@ if __name__ == "__main__":
             "pruning.name": parts[3],
             "pruning_step": parts[1],
             "retraining": parts[0],
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
         }
         print(config)
 
