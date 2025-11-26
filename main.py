@@ -181,7 +181,27 @@ def main(cfg: DictConfig):
             )
             end = time.perf_counter()
             retraining_time = end - start
-            
+
+        print("After Retraining:")
+        _, class_accuracies_pruned_r, inference_time_after_r, inf_time_all_after_r = measure_inference_time_and_accuracy(
+            subset_data_loader_test,
+            pruned_model,
+            device,
+            cfg.training.batch_size_test,
+            cfg.dataset.num_classes,
+            all_classes=True,
+            print_results=True,
+            selected_classes=(
+                cfg.selected_classes.copy() if cfg.replace_last_layer else None
+            ),
+            with_onnx=cfg.inference_with_onnx
+        )
+        
+        accuracy_after_retraining = calculate_accuracy_for_selected_classes(
+            class_accuracies_pruned_r, cfg.selected_classes
+        ) 
+        
+        inference_time_ratio_retraining = (inference_time_after_r / inference_time_before) if inference_time_before > 0 else 0             
 
         model_size_before = get_model_size(model)
         model_size_after = get_model_size(pruned_model)
@@ -231,6 +251,8 @@ def main(cfg: DictConfig):
                     "inference_time_all_after": inf_time_all_after,
                     "best_accuracy_retraining": best_accuracy,
                     "best_epoch_retraining": best_epoch,
+                    "accuracy_after_retraining": accuracy_after_retraining,
+                    "inference_time_ratio_retraining": inference_time_ratio_retraining,
                 }
             )
 
