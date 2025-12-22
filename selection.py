@@ -12,6 +12,7 @@ from helpers import (
 )
 from omegaconf import DictConfig
 from torchpruner.attributions import TaylorAttributionMetric, APoZAttributionMetric, SensitivityAttributionMetric
+from typing import List, Tuple, Union
 
 
 def get_selector(
@@ -30,7 +31,7 @@ def get_selector(
     """
 
     if selector_config.name == "random":
-        return RandomSelection(pruning_ratio=selector_config.pruning_ratio)
+        return RandomSelection(pruning_ratio=selector_config.pruning_ratio, skip_first_layers=skip_first_layers)
     elif selector_config.name == "ocap":
         return OCAP(
             pruning_ratio=selector_config.pruning_ratio,
@@ -44,6 +45,7 @@ def get_selector(
             pruning_ratio=selector_config.pruning_ratio,
             data_loader=data_loader,
             skip_first_layers=skip_first_layers,
+            device=device,
         )
     elif selector_config.name == "ln_structured":
         return LnStructuredPruning(selector_config.pruning_ratio, skip_first_layers, device, selector_config.norm, selector_config.pruning_scope)
@@ -106,59 +108,70 @@ class PruningSelection(ABC):
            
         
 class RandomSelection(PruningSelection):
-    def __init__(self, pruning_ratio: float):
+    def __init__(self, pruning_ratio: float, skip_first_layers: int = 0):
         super().__init__()
         self.pruning_ratio = pruning_ratio
+        self.skip_first_layers = skip_first_layers
 
     def select(self, model: nn.Module):
         """Selects a random subset of filters to prune based on the specified pruning ratio."""
+        
+        all_selections = []
+        self.global_pruning_ratio = []
+        for ratio in self.pruning_ratio:
+            indices = {}
+            for name, module in model.named_modules():
+                if isinstance(module, nn.Conv2d):
+                    num_filters = module.out_channels
+                    num_to_prune = int(num_filters * ratio)
+                    filters_to_prune = random.sample(range(num_filters), num_to_prune)
+                    indices[name] = filters_to_prune
 
-        selected_filters = {}
-        for name, module in model.named_modules():
-            if isinstance(module, nn.Conv2d):
-                num_filters = module.out_channels
-                num_to_prune = int(num_filters * self.pruning_ratio)
-                filters_to_prune = random.sample(range(num_filters), num_to_prune)
-                selected_filters[name] = filters_to_prune
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(selected_filters, model)
-        return selected_filters
+            if self.skip_first_layers:
+                indices = self._remove_first_layers_in_selection(indices, model)
+            all_selections.append(indices)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices, model))
+
+        return all_selections
 
 
 class OCAP(PruningSelection):
     def __init__(
         self,
-        pruning_ratio: float,
+        pruning_ratio: List[float],
         data_loader: torch.utils.data.DataLoader,
         activation_func: str = "relu",
         device="mps",
         skip_first_layers: int = 1,
     ):
         super().__init__(skip_first_layers=skip_first_layers)
-        self.pruning_ratio = pruning_ratio
+        self.pruning_ratios = pruning_ratio
         self.data_loader = data_loader
         self.activation_func = get_activation_function(activation_func)
         self.device = device
+        self.global_pruning_ratio = []
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the OCAP method."""
 
-        layer_masks, _ = Compute_layer_mask(
+        all_layer_masks, _ = Compute_layer_mask(
             imgs_dataloader=self.data_loader,
             model=model,
-            percent=self.pruning_ratio,
+            ratios=self.pruning_ratios,
             device=self.device,
             activation_func=self.activation_func,
         )
-
         names_of_conv_layers = get_names_of_conv_layers(model)
-        masks = dict(zip(names_of_conv_layers, layer_masks))
-        if self.skip_first_layers:
-            masks = self._remove_first_layers_in_selection(masks, model)
-        indices = get_pruning_indices(masks)
-
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
-
-        return indices
+        all_indices = []
+        for layer_masks in all_layer_masks:
+            masks = dict(zip(names_of_conv_layers, layer_masks))
+            if self.skip_first_layers:
+                masks = self._remove_first_layers_in_selection(masks, model)
+            indices = get_pruning_indices(masks)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices, model))
+            all_indices.append(indices)
+            
+        return all_indices
 
 
 class LRPPruning(PruningSelection):
@@ -187,12 +200,14 @@ class LRPPruning(PruningSelection):
             y_test_true=y.to(self.device),
         )
 
-        if self.skip_first_layers:
-            indices = self._remove_first_layers_in_selection(indices, model)
-        
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
+        all_indices = []
+        self.global_pruning_ratio = []
+        for indices_p in indices:
+            if self.skip_first_layers:
+                all_indices.append(self._remove_first_layers_in_selection(indices_p, model))
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices_p, model))
 
-        return indices
+        return all_indices
 
 
 class LnStructuredPruning(PruningSelection):
@@ -206,8 +221,10 @@ class LnStructuredPruning(PruningSelection):
 
     def select(self, model: nn.Module):
         model.to(self.device)
-        indices = {}
+        indices = [{} for _ in range(len(self.pruning_ratio))]
+
         scores_per_layer = {}
+
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 layer_scores = self._weight_norm(module)
@@ -215,22 +232,26 @@ class LnStructuredPruning(PruningSelection):
                     scores_per_layer[name] = layer_scores
                 elif self.pruning_scope == "layer":  
                     num_filters = len(layer_scores)
-                    num_to_prune = int(num_filters * self.pruning_ratio)
-                    top_indices = torch.topk(layer_scores, num_to_prune, largest=False).indices.tolist()
-                    indices[name] = top_indices
+                    for index, ratio in enumerate(self.pruning_ratio):
+                        num_to_prune = int(num_filters * ratio)
+                        top_indices = torch.topk(layer_scores, num_to_prune, largest=False).indices.tolist()
+                        indices[index][name] = top_indices
         
         if self.pruning_scope == "global":
             scores = torch.cat(list(scores_per_layer.values()))
             scores = scores.sort().values
-            threshold_element = scores[int(len(scores) * self.pruning_ratio)]
-            for name, scores in scores_per_layer.items():
-                top_indices = (scores < threshold_element).nonzero(as_tuple=False).squeeze(1).tolist()
-                indices[name] = top_indices
-       
-        if self.skip_first_layers:
-            indices = self._remove_first_layers_in_selection(indices, model)
+            for index, ratio in enumerate(self.pruning_ratio):
+                threshold_element = scores[int(len(scores) * ratio)]
+                for name, scores in scores_per_layer.items():
+                    top_indices = (scores < threshold_element).nonzero(as_tuple=False).squeeze(1).tolist()
+                    indices[index][name] = top_indices
+        
+        self.global_pruning_ratio = []
+        for index in range(len(indices)):
+            if self.skip_first_layers:
+                indices[index] = self._remove_first_layers_in_selection(indices[index], model)
 
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices[index], model))
 
         return indices
     
@@ -305,8 +326,9 @@ class TorchPrunerAttributions(PruningSelection):
 
 
     def select(self, model: nn.Module):
-        indices = {}
+        indices = []
         all_scores = []
+        self.global_pruning_ratio = []
         for name, module in model.named_modules():
             if isinstance(module, nn.Conv2d):
                 attr = self.attribution(model, self.data_loader, nn.CrossEntropyLoss(), self.device)
@@ -316,16 +338,18 @@ class TorchPrunerAttributions(PruningSelection):
                     all_scores.append((score, name, index))
         
         all_scores.sort(key=lambda x: x[0])
-        num_to_prune = int(len(all_scores) * self.pruning_ratio)
-        for i in range(num_to_prune):
-            _, layer_name, filter_index = all_scores[i]
-            if layer_name not in indices:
-                indices[layer_name] = []
-            indices[layer_name].append(filter_index)
-
-        if self.skip_first_layers:
-            indices = self._remove_first_layers_in_selection(indices, model)
-
-        self.global_pruning_ratio = self._calculate_global_pruning_ratio(indices, model)
+        for ratio in self.pruning_ratio:
+            indices_d = {}
+            num_to_prune = int(len(all_scores) * ratio)
+            for i in range(num_to_prune):
+                _, layer_name, filter_index = all_scores[i]
+                if layer_name not in indices_d:
+                    indices_d[layer_name] = []
+                indices_d[layer_name].append(filter_index)
+            
+            if self.skip_first_layers:
+                indices_d = self._remove_first_layers_in_selection(indices_d, model)
+            indices.append(indices_d)
+            self.global_pruning_ratio.append(self._calculate_global_pruning_ratio(indices_d, model))
         
         return indices

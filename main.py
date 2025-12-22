@@ -14,15 +14,12 @@ from metrics import (
 from helpers import (
     train_model,
     get_optimizer,
-    plot_accuracies,
-    get_pruning_masks,
     filter_pruning_indices_for_resnet,
 )
-from pruner import StructuredPruner, DepGraphPruner
+from pruner import DepGraphPruner
 from selection import get_selector
 from models import get_model
 import wandb
-import PIL
 from fvcore.nn import FlopCountAnalysis
 
 
@@ -55,9 +52,6 @@ def main(cfg: DictConfig):
         if torch.cuda.is_available()
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-
-    if cfg.pruning.pruning_ratio > 0.77 and cfg.model.name == "resnet18" and cfg.pruning.name == "lrp":
-        raise ValueError("Pruning ratio too high for resnet18, please choose a value < 0.77")
 
     if cfg.device:
         device = torch.device(cfg.device)
@@ -106,141 +100,162 @@ def main(cfg: DictConfig):
     selector = get_selector(
         selector_config=cfg.pruning, data_loader=subset_data_loader_train, device=device, skip_first_layers=cfg.model.skip_first_layers
     )
-    indices, pruning_time = measure_execution_time(selector, model)
+
+    all_indices, pruning_time = measure_execution_time(selector, model)
     print("Global pruning ratio:", selector.global_pruning_ratio)
-    masks = get_pruning_masks(indices, model)
-    for key, values in indices.items():
-        print(f"{key}: {len(values)} filters to prune")
-    if cfg.resnet_zero_insertion:
-        pruner = StructuredPruner(
-            model=model,
-            masks=masks,
-            selected_classes=cfg.selected_classes,
-            replace_last_layer=cfg.replace_last_layer,
-        )
-    else:
-        if cfg.model.name.startswith("resnet"):
-            indices = filter_pruning_indices_for_resnet(indices, cfg.model.name)
 
-        pruner = DepGraphPruner(
-            model=model,
-            indices=indices,
-            replace_last_layer=cfg.replace_last_layer,
-            selected_classes=cfg.selected_classes,
-            device=device,
-        )
+    if cfg.model.name.startswith("resnet"):
+        all_indices = filter_pruning_indices_for_resnet(all_indices, cfg.model.name)
 
-    pruned_model = pruner.prune()
-    torch.save(pruned_model.state_dict(), "pruned_model.pth")
-    print("Model pruned successfully.")
-
-    # Evaluate the model before and after pruning
-    print("Before pruning:")
-    torch.cuda.empty_cache()
-    model.to(device)
-    pruned_model.to(device)
-    accuracy_original, class_accuracies_original, inference_time_before = measure_inference_time_and_accuracy(
-        subset_data_loader_test,
-        model,
-        device,
-        cfg.training.batch_size_test,
-        cfg.dataset.num_classes,
-        all_classes=True,
-        print_results=True,
-        selected_classes=None,
-        with_onnx=cfg.inference_with_onnx
-    )
-    print("After pruning:")
-    accuracy_pruned, class_accuracies_pruned, inference_time_after = measure_inference_time_and_accuracy(
-        subset_data_loader_test,
-        pruned_model,
-        device,
-        cfg.training.batch_size_test,
-        cfg.dataset.num_classes,
-        all_classes=True,
-        print_results=True,
-        selected_classes=(
-            cfg.selected_classes.copy() if cfg.replace_last_layer else None
-        ),
-        with_onnx=cfg.inference_with_onnx
-    )
-    accuracy_before = calculate_accuracy_for_selected_classes(
-        class_accuracies_original, cfg.selected_classes
-    )
-    accuracy_after = calculate_accuracy_for_selected_classes(
-        class_accuracies_pruned, cfg.selected_classes
-    )
-
-    print(f"Accuracy before pruning: {accuracy_before:.2f}%")
-    print(f"Accuracy after pruning: {accuracy_after:.2f}%")
     
-    retraining_time = 0
-    if cfg.training.retrain_after_pruning:
-        print("Retraining the pruned model...")
-        if cfg.pruning.name == "torchpruner":
-            subset_data_loader_train = subset_data_loader_train_retrain
-        start = time.perf_counter()
-        best_accuracy, best_epoch = train(
-            cfg,
-            pruned_model,
-            subset_data_loader_train,
+    subset_data_loader_train, subset_data_loader_test = dataloader_factory.get_subset_dataloaders()
+    for num, indices in enumerate(all_indices):
+        print(f"Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
+        pruner = DepGraphPruner(
+                model=model,
+                indices=indices,
+                replace_last_layer=cfg.replace_last_layer,
+                selected_classes=cfg.selected_classes,
+                device=device,
+            )
+        if cfg.pruning.pruning_ratio[num] > 0:
+            pruned_model = pruner.prune()
+            print("Model pruned successfully.")
+        else:
+            pruner._replace_last_layer()
+            pruned_model = pruner.model
+        # Evaluate the model before and after pruning
+        print("Before pruning:")
+        torch.cuda.empty_cache()
+        model.to(device)
+        pruned_model.to(device)
+        _, class_accuracies_original, inference_time_before, inf_time_all_before = measure_inference_time_and_accuracy(
             subset_data_loader_test,
+            model,
             device,
-            retrain=True
+            cfg.training.batch_size_test,
+            cfg.dataset.num_classes,
+            all_classes=True,
+            print_results=True,
+            selected_classes=None,
+            with_onnx=cfg.inference_with_onnx
         )
-        end = time.perf_counter()
-        retraining_time = end - start
+        print("After pruning:")
+        _, class_accuracies_pruned, inference_time_after, inf_time_all_after = measure_inference_time_and_accuracy(
+            subset_data_loader_test,
+            pruned_model,
+            device,
+            cfg.training.batch_size_test,
+            cfg.dataset.num_classes,
+            all_classes=True,
+            print_results=True,
+            selected_classes=(
+                cfg.selected_classes.copy() if cfg.replace_last_layer else None
+            ),
+            with_onnx=cfg.inference_with_onnx
+        )
+        accuracy_before = calculate_accuracy_for_selected_classes(
+            class_accuracies_original, cfg.selected_classes
+        )
+        accuracy_after = calculate_accuracy_for_selected_classes(
+            class_accuracies_pruned, cfg.selected_classes
+        )
+
+        print(f"Accuracy before pruning: {accuracy_before:.2f}%")
+        print(f"Accuracy after pruning: {accuracy_after:.2f}%")
+        
+        retraining_time = 0
+        best_accuracy, best_epoch = None, None
+        if cfg.training.retrain_after_pruning:
+            print("Retraining the pruned model...")
+            if cfg.pruning.name == "torchpruner":
+                subset_data_loader_train = subset_data_loader_train_retrain
+            start = time.perf_counter()
+            best_accuracy, best_epoch = train(
+                cfg,
+                pruned_model,
+                subset_data_loader_train,
+                subset_data_loader_test,
+                device,
+                retrain=True
+            )
+            end = time.perf_counter()
+            retraining_time = end - start
+
+        print("After Retraining:")
+        _, class_accuracies_pruned_r, inference_time_after_r, inf_time_all_after_r = measure_inference_time_and_accuracy(
+            subset_data_loader_test,
+            pruned_model,
+            device,
+            cfg.training.batch_size_test,
+            cfg.dataset.num_classes,
+            all_classes=True,
+            print_results=True,
+            selected_classes=(
+                cfg.selected_classes.copy() if cfg.replace_last_layer else None
+            ),
+            with_onnx=cfg.inference_with_onnx
+        )
+        
+        accuracy_after_retraining = calculate_accuracy_for_selected_classes(
+            class_accuracies_pruned_r, cfg.selected_classes
+        ) 
+        
+        inference_time_ratio_retraining = (inference_time_after_r / inference_time_before) if inference_time_before > 0 else 0             
+
+        model_size_before = get_model_size(model)
+        model_size_after = get_model_size(pruned_model)
+        parameter_ratio = get_parameter_ratio(model, pruned_model)
+
+        # Flop Analysis
+        flops_before = FlopCountAnalysis(model, torch.randn(1, 3, 224, 224).to(device))
+        flops_after = FlopCountAnalysis(pruned_model, torch.randn(1, 3, 224, 224).to(device))
+        print(f"FLOPs before pruning: {flops_before.total()/1e6} MFLOPs")
+        print(f"FLOPs after pruning: {flops_after.total()/1e6} MFLOPs")
+        print(f"FLOPs reduction ratio: {flops_after.total()/flops_before.total()}")
+
+        print(f"Batch Inference time before pruning: {inference_time_before}")
+        print(f"Batch Inference time after pruning: {inference_time_after}")
+        inference_time_ratio = (inference_time_after / inference_time_before) if inference_time_before > 0 else 0
+        print(f"Inference time ratio: {inference_time_ratio}")
+
+        print(f"Model size before pruning: {model_size_before} MB")
+        print(f"Model size after pruning: {model_size_after} MB")
+        print(f"Pruned parameters ratio: {1 - parameter_ratio}")
         if cfg.log_results:
-            wandb.log({
-                "best_accuracy_retraining": best_accuracy,
-                "best_epoch_retraining": best_epoch,
-            })
+            wandb.log(
+                {
+                    "accuracy_before": accuracy_before,
+                    "accuracy_after": accuracy_after,
+                    "model_size_before": model_size_before,
+                    "model_size_after": model_size_after,
+                    "model_size_ratio": model_size_after / model_size_before,
+                    "parameter_ratio": parameter_ratio,
+                    "gloabal_pruning_ratio": selector.global_pruning_ratio,
+                    "class_accuracies_original": class_accuracies_original,
+                    "class_accuracies_pruned": class_accuracies_pruned,
+                    "inference_time_batch_before": inference_time_before,
+                    "inference_time_batch_after": inference_time_after,
+                    "inference_time_ratio": inference_time_ratio,
+                    "inference_time_per_sample_before": inference_time_before
+                    / cfg.training.batch_size_test,
+                    "inference_time_per_sample_after": inference_time_after,
+                    "pruned_parameters": 1 - parameter_ratio,
+                    "flops_before": flops_before.total(),
+                    "flops_after": flops_after.total(),
+                    "flops_ratio": flops_after.total() / flops_before.total(),
+                    "pruning_time": pruning_time,
+                    "retraining_time": retraining_time,
+                    "total_time": pruning_time + retraining_time,
+                    "inference_time_all_before": inf_time_all_before,
+                    "inference_time_all_after": inf_time_all_after,
+                    "best_accuracy_retraining": best_accuracy,
+                    "best_epoch_retraining": best_epoch,
+                    "accuracy_after_retraining": accuracy_after_retraining,
+                    "inference_time_ratio_retraining": inference_time_ratio_retraining,
+                }
+            )
 
-    model_size_before = get_model_size(model)
-    model_size_after = get_model_size(pruned_model)
-    parameter_ratio = get_parameter_ratio(model, pruned_model)
-
-    # Flop Analysis
-    flops_before = FlopCountAnalysis(model, torch.randn(1, 3, 224, 224).to(device))
-    flops_after = FlopCountAnalysis(pruned_model, torch.randn(1, 3, 224, 224).to(device))
-    print(f"FLOPs before pruning: {flops_before.total()/1e6} MFLOPs")
-    print(f"FLOPs after pruning: {flops_after.total()/1e6} MFLOPs")
-    print(f"FLOPs reduction ratio: {flops_after.total()/flops_before.total()}")
-
-    print(f"Batch Inference time before pruning: {inference_time_before}")
-    print(f"Batch Inference time after pruning: {inference_time_after}")
-    print(f"Inference time ratio: {inference_time_after / inference_time_before}")
-
-    print(f"Model size before pruning: {model_size_before} MB")
-    print(f"Model size after pruning: {model_size_after} MB")
-    print(f"Pruned parameters ratio: {1 - parameter_ratio}")
-    if cfg.log_results:
-        wandb.log(
-            {
-                "accuracy_before": accuracy_before,
-                "accuracy_after": accuracy_after,
-                "model_size_before": model_size_before,
-                "model_size_after": model_size_after,
-                "model_size_ratio": model_size_after / model_size_before,
-                "parameter_ratio": parameter_ratio,
-                "gloabal_pruning_ratio": selector.global_pruning_ratio,
-                "class_accuracies_original": class_accuracies_original,
-                "class_accuracies_pruned": class_accuracies_pruned,
-                "inference_time_batch_before": inference_time_before,
-                "inference_time_batch_after": inference_time_after,
-                "inference_time_ratio": inference_time_after / inference_time_before,
-                "inference_time_per_sample_before": inference_time_before
-                / cfg.training.batch_size_test,
-                "inference_time_per_sample_after": inference_time_after,
-                "pruned_parameters": 1 - parameter_ratio,
-                "flops_before": flops_before.total(),
-                "flops_after": flops_after.total(),
-                "flops_ratio": flops_after.total() / flops_before.total(),
-                "pruning_time": pruning_time,
-                "retraining_time": retraining_time,
-                "total_time": pruning_time + retraining_time,
-            }
-        )
     if cfg.log_results:
         wandb.finish()
 

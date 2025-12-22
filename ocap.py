@@ -8,7 +8,7 @@ from torch import nn
 def Compute_layer_mask(
     imgs_dataloader,
     model,
-    percent,
+    ratios,
     device,
     activation_func
 ):
@@ -62,7 +62,17 @@ def Compute_layer_mask(
 
             new_activations.append(combine_activation)
 
-        # ------ layer-by-layer
+        all_masks = []
+        all_global_pruning_ratios = []
+        for ratio in ratios:
+            masks, global_pruning_ratio = layer_mask_calculation(new_activations, ratio, activation_func)
+            all_masks.append(masks)
+            all_global_pruning_ratios.append(global_pruning_ratio)
+        return all_masks, all_global_pruning_ratios
+
+
+def layer_mask_calculation(new_activations, ratio, activation_func):
+    # ------ layer-by-layer
         masks = []
         # New activations are now a list of tensors, each tensor corresponds to a layer
         for layer_activations in new_activations:
@@ -73,7 +83,7 @@ def Compute_layer_mask(
             layer_masks = torch.empty_like(layer_activations_score, dtype=torch.bool)
             # Iterate over each image's activations to compute the mask, shape of imgs_activations_score is [c]
             for idx, imgs_activations_score in enumerate(layer_activations_score):
-                num_to_prune = min(int(len(imgs_activations_score) * percent), len(imgs_activations_score) - 1)
+                num_to_prune = min(int(len(imgs_activations_score) * ratio), len(imgs_activations_score) - 1)
                 prune_indices = torch.argsort(imgs_activations_score)[:num_to_prune].tolist()
                 one_img_mask = torch.ones_like(imgs_activations_score, dtype=torch.bool)
                 one_img_mask[prune_indices] = 0

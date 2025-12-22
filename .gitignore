@@ -10,6 +10,7 @@ outputs/
 
 # Weights
 *.pth
+*.pt
 
 # Vs Code workspace files
 .vscode/

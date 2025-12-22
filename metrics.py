@@ -9,6 +9,7 @@ from statistics import mean
 import onnxruntime as ort
 import numpy as np
 import io
+import statistics
 
 
 def calculate_model_accuracy(
@@ -141,6 +142,7 @@ def measure_inference_time_and_accuracy(
         model.to(device)
         model_func = lambda x: model(x)  
    
+    torch.cuda.empty_cache() if device.type == "cuda" else None
     warmup_data = torch.randn(batch_size, C, H, W).to(device)
     with torch.no_grad():
         for _ in range(10):
@@ -161,9 +163,9 @@ def measure_inference_time_and_accuracy(
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
             ) as prof:
                 with record_function("model_inference"):
-                    torch.cuda.synchronize()
+                    torch.cuda.synchronize() if device.type == "cuda" else None
                     output = model_func(input)
-                    torch.cuda.synchronize()
+                    torch.cuda.synchronize() if device.type == "cuda" else None
             for event in prof.key_averages():
                 if event.key == "model_inference":
                     if device.type == "cuda":
@@ -194,11 +196,11 @@ def measure_inference_time_and_accuracy(
                 class_accuracies[i] = accuracy_i
                 print(f"Accuracy of class {i}: {accuracy_i:.2f}%")  
 
-    inference_time = mean(times) if times else 0         
-    return accuracy, class_accuracies, inference_time
+    inference_time = mean(times) if times else 0     
+    return accuracy, class_accuracies, inference_time, times
 
 
-def measure_execution_time(selector, model):
+def measure_execution_time(selector, model): # TODO: adjust for multiple pruning ratios
     times = []
     for _ in range(1):
         start = time.perf_counter()
@@ -209,3 +211,41 @@ def measure_execution_time(selector, model):
     elapsed_time = mean(times)
     print("time:", elapsed_time)
     return indices, elapsed_time
+
+
+def measure_inference_time(data_loader: DataLoader, model: nn.Module, device: str, batch_size: int):
+    model.eval()
+    times = []
+    C, W, H = data_loader.dataset.__getitem__(0)[0].shape
+    torch.cuda.empty_cache() if device.type == "cuda" else None
+    warmup_data = torch.randn(batch_size, C, H, W).to(device)
+    with torch.no_grad():
+        for _ in range(10):
+            _ = model(warmup_data)
+
+    for _ in range(10):
+        if device.type == "mps":
+            start_time = time.time()
+            torch.mps.synchronize() 
+            _ = model(warmup_data)
+            torch.mps.synchronize() 
+            end_time = time.time()
+            times.append((end_time - start_time)*1000)  # Convert to ms
+        else:
+            with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
+            ) as prof:
+                with record_function("model_inference"):
+                    torch.cuda.synchronize() if device.type == "cuda" else None
+                    _ = model(warmup_data)
+                    torch.cuda.synchronize() if device.type == "cuda" else None
+            for event in prof.key_averages():
+                if event.key == "model_inference":
+                    if device.type == "cuda":
+                        times.append(event.device_time_total / 1000)  # Convert to ms
+                    else:
+                        times.append(event.cpu_time_total / 1000)  # Convert to ms
+            
+
+    inference_time = statistics.mean(times) if times else 0     
+    return inference_time, times

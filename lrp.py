@@ -207,14 +207,17 @@ class FilterPruner:
             self.filter_ranks[i] = v.cpu()
 
     def get_pruning_plan(self, pruning_ratio):
-        ranked_filters = self.lowest_ranking_filters(pruning_ratio)
+        all_indices = []
+        for ratio in pruning_ratio:
+            ranked_filters = self.lowest_ranking_filters(ratio)
 
-        ranked_filters = [x[:2] for x in ranked_filters]
-        layer_to_filter_indices = {}
-        for name, value in ranked_filters:
-            layer_to_filter_indices.setdefault(name, []).append(value)
+            ranked_filters = [x[:2] for x in ranked_filters]
+            layer_to_filter_indices = {}
+            for name, value in ranked_filters:
+                layer_to_filter_indices.setdefault(name, []).append(value)
+            all_indices.append(layer_to_filter_indices)
 
-        return layer_to_filter_indices
+        return all_indices
 
     def lowest_ranking_filters(self, pruning_ratio):
         data = []
