@@ -165,7 +165,7 @@ def main(cfg: DictConfig):
         print(f"Accuracy after pruning: {accuracy_after:.2f}%")
         
         retraining_time = 0
-        best_accuracy, best_epoch = None, None
+        best_accuracy, best_epoch, accuracy_after_retraining, inference_time_ratio_retraining = None, None, None, None
         if cfg.training.retrain_after_pruning:
             print("Retraining the pruned model...")
             if cfg.pruning.name == "torchpruner":
@@ -182,26 +182,26 @@ def main(cfg: DictConfig):
             end = time.perf_counter()
             retraining_time = end - start
 
-        print("After Retraining:")
-        _, class_accuracies_pruned_r, inference_time_after_r, inf_time_all_after_r = measure_inference_time_and_accuracy(
-            subset_data_loader_test,
-            pruned_model,
-            device,
-            cfg.training.batch_size_test,
-            cfg.dataset.num_classes,
-            all_classes=True,
-            print_results=True,
-            selected_classes=(
-                cfg.selected_classes.copy() if cfg.replace_last_layer else None
-            ),
-            with_onnx=cfg.inference_with_onnx
-        )
+            print("After Retraining:")
+            _, class_accuracies_pruned_r, inference_time_after_r, inf_time_all_after_r = measure_inference_time_and_accuracy(
+                subset_data_loader_test,
+                pruned_model,
+                device,
+                cfg.training.batch_size_test,
+                cfg.dataset.num_classes,
+                all_classes=True,
+                print_results=True,
+                selected_classes=(
+                    cfg.selected_classes.copy() if cfg.replace_last_layer else None
+                ),
+                with_onnx=cfg.inference_with_onnx
+            )
         
-        accuracy_after_retraining = calculate_accuracy_for_selected_classes(
-            class_accuracies_pruned_r, cfg.selected_classes
-        ) 
+            accuracy_after_retraining = calculate_accuracy_for_selected_classes(
+                class_accuracies_pruned_r, cfg.selected_classes
+            ) 
         
-        inference_time_ratio_retraining = (inference_time_after_r / inference_time_before) if inference_time_before > 0 else 0             
+            inference_time_ratio_retraining = (inference_time_after_r / inference_time_before) if inference_time_before > 0 else 0             
 
         model_size_before = get_model_size(model)
         model_size_after = get_model_size(pruned_model)
