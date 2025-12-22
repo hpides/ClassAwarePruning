@@ -26,7 +26,7 @@ from fvcore.nn import FlopCountAnalysis
 def train(cfg: DictConfig, model, train_loader, test_loader, device, retrain=False):
     criterion = nn.CrossEntropyLoss()
     optimizer = get_optimizer(
-            cfg.training.optimizer, model, cfg.training.lr if retrain else cfg.training.lr_retrain, cfg.training.weight_decay
+            cfg.training.optimizer, model, cfg.training.lr if not retrain else cfg.training.lr_retrain, cfg.training.weight_decay
         )
         
     model.to(device)
