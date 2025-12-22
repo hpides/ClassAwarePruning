@@ -5,7 +5,7 @@
 
 This project is a benchmarking framework for comparing class-aware and traditional pruning methods on convolutional neural networks (CNNs). I implemented this for my master's thesis on benchmarking class-aware pruning techniques. The pruning algorithms can be evaluated on different datasets (CIFAR10, ImageNet, GTSRB) and model architectures (VGG16, ResNet18) by measuring accuracy, inference time and model size before and after pruning.
 
-![Pruning process diagram](pruning_process.png)
+![Pruning process diagram](assets/pruning_process.png)
 
 This is a schematic overview over the pruning pipeline. The in `selection.py` we implement selector objects that use different pruning algorithms for filters selection. The output is a dictionary with the indices of the filters that we are going to prune for each convolutional layer. The next part is the filter removal part where we remove the filters from the model. This is implemented in the pruner classes in `pruner.py`. Finally there is an optional retraining step using samples from the selected classes.
 
