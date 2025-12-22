@@ -161,7 +161,9 @@ def measure_inference_time_and_accuracy(
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
             ) as prof:
                 with record_function("model_inference"):
+                    torch.cuda.synchronize()
                     output = model_func(input)
+                    torch.cuda.synchronize()
             for event in prof.key_averages():
                 if event.key == "model_inference":
                     if device.type == "cuda":
