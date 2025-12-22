@@ -1,14 +1,14 @@
 defaults:
-  - pruning: lrp  
+  - pruning: ocap  
   - model: vgg16
   - dataset: cifar10
   - _self_
 
-selected_classes: [0,1,2]
+selected_classes: [0,1,2] 
 num_pruning_samples: 512
 replace_last_layer: true
-log_results: false
-run_name: resnet18_ocap
+log_results: true
+run_name: null
 device: null
 resnet_zero_insertion: false
 inference_with_onnx: false
@@ -16,13 +16,13 @@ inference_with_onnx: false
 training:
   train: false
   use_data_augmentation: false # set to false to make results deterministic in pruning
-  retrain_after_pruning: false
+  retrain_after_pruning: true
   retrain_epochs: 10
-  batch_size_train: 64
-  batch_size_test: 64
-  lr: 0.39
+  batch_size_train: 256
+  batch_size_test: 256
+  lr: 0.0005
   lr_retrain: 0.00001
   weight_decay: 1e-4
-  epochs: 0
+  epochs: 30
   optimizer: adamw
   use_pretrained_model: true
