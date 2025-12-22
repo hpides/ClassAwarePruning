@@ -5,8 +5,10 @@ data/
 
 # Outputs
 outputs/
+figures/
+model_weights/
 *.out
-*.png
+
 
 # Weights
 *.pth
