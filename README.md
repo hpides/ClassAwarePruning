@@ -32,7 +32,7 @@ All pruning strategies inherit from `PruningSelection` abstract base and impleme
 - **TorchPruner**: Wraps torch_pruning library with Taylor/APoZ attribution metrics (not class-aware) --> used https://github.com/marcoancona/TorchPruner
 
 
-## Development Workflows
+## Usage
 
 
 ### Pruning a Pretrained Model
