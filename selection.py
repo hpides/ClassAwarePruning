@@ -3,8 +3,8 @@ import torch
 import random
 import numpy as np
 from abc import ABC, abstractmethod
-from ocap import Compute_layer_mask
-from lrp import get_candidates_to_prune
+from filter_selection.ocap import Compute_layer_mask
+from filter_selection.lrp import get_candidates_to_prune
 from helpers import (
     get_names_of_conv_layers,
     get_activation_function,

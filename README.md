@@ -26,8 +26,8 @@ This is a schematic overview over the pruning pipeline. The in `selection.py` we
 
 All pruning strategies inherit from `PruningSelection` abstract base and implement `select(model)` → dict of layer masks/indices:
 
-- **OCAP** (`ocap.py`): Computes activation statistics via forward hooks, applies ratios per-layer (class-aware) -> based on https://github.com/mzd2222/OCAP
-- **LRP** (`lrp.py`): Layer-wise Relevance Propagation; uses backpropagation to compute relevance scores (class-aware) -> based on https://github.com/seulkiyeom/LRP_Pruning_toy_example
+- **OCAP** (`filter_selection/ocap.py`): Computes activation statistics via forward hooks, applies ratios per-layer (class-aware) -> based on https://github.com/mzd2222/OCAP
+- **LRP** (`filter_selection/lrp.py`): Layer-wise Relevance Propagation; uses backpropagation to compute relevance scores (class-aware) -> based on https://github.com/seulkiyeom/LRP_Pruning_toy_example
 - **LnStructured**: Prunes by layer norm magnitude (not class-aware)
 - **TorchPruner**: Wraps torch_pruning library with Taylor/APoZ attribution metrics (not class-aware) --> used https://github.com/marcoancona/TorchPruner
 

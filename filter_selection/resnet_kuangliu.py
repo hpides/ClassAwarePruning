@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from lrp_utils import *
+from .lrp_utils import *
 
 
 class Cannotloadmodelweightserror(Exception):

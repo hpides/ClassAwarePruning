@@ -1,10 +1,10 @@
 import torch
 from heapq import nsmallest
 from operator import itemgetter
-from resnet_kuangliu import ResNet18_kuangliu_c
+from .resnet_kuangliu import ResNet18_kuangliu_c
 from torchvision.models import ResNet
 from torch.autograd import Variable
-import lrp_utils
+from .lrp_utils import *
 import torch.nn as nn
 import copy
 
@@ -16,13 +16,13 @@ EXTREMELY_HIGH_VALUE = 99999999
 # https://github.com/seulkiyeom/LRP_Pruning_toy_example
 
 lrp_layer2method = {
-    "nn.ReLU": lrp_utils.relu_wrapper_fct,
-    "nn.BatchNorm2d": lrp_utils.relu_wrapper_fct,
-    "nn.Conv2d": lrp_utils.conv2d_beta0_wrapper_fct,
-    "nn.Linear": lrp_utils.linearlayer_eps_wrapper_fct,
-    "nn.AdaptiveAvgPool2d": lrp_utils.adaptiveavgpool2d_wrapper_fct,
-    "nn.MaxPool2d": lrp_utils.maxpool2d_wrapper_fct,
-    "sum_stacked2": lrp_utils.eltwisesum_stacked2_eps_wrapper_fct,
+    "nn.ReLU": relu_wrapper_fct,
+    "nn.BatchNorm2d": relu_wrapper_fct,
+    "nn.Conv2d": conv2d_beta0_wrapper_fct,
+    "nn.Linear": linearlayer_eps_wrapper_fct,
+    "nn.AdaptiveAvgPool2d": adaptiveavgpool2d_wrapper_fct,
+    "nn.MaxPool2d": maxpool2d_wrapper_fct,
+    "sum_stacked2": eltwisesum_stacked2_eps_wrapper_fct,
 }
 
 
