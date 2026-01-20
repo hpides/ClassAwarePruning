@@ -4,6 +4,7 @@ import torch.fx as fx
 import torch_pruning as tp
 import copy
 from torchvision.models.resnet import BasicBlock, Bottleneck
+from typing import Dict, List
 
 
 class StructuredPruner:
@@ -298,3 +299,106 @@ class ZeroInsertion(nn.Module):
         output = torch.zeros(output_shape, dtype=input.dtype, device=input.device)
         output[:, self.indices] = input
         return output
+
+
+##########################################
+#########  UNSTRUCTURED PRUNING  #########
+##########################################
+
+class UnstructuredPruner:
+    """
+    Applies unstructured (weight-level) pruning masks to a model.
+
+    Unlike structured pruning, this doesn't remove filters but zeros out individual weights.
+    No speedup benefits, but useful for accuracy comparison baselines.
+    """
+
+    def __init__(
+            self,
+            model: nn.Module,
+            masks: Dict[str, torch.Tensor],
+            replace_last_layer: bool = True,
+            selected_classes: List[int] = [],
+            device: str = "cpu"
+    ):
+        """
+        Args:
+            model: The model to prune
+            masks: Dictionary mapping layer names to binary masks (1=keep, 0=prune)
+            replace_last_layer: Whether to replace the final classification layer
+            selected_classes: List of target class indices
+            device: Device to run on
+        """
+        self.model = copy.deepcopy(model)
+        self.masks = masks
+        self.replace_last_layer = replace_last_layer
+        self.selected_classes = selected_classes
+        self.device = device
+
+    def prune(self):
+        """Apply pruning masks to the model."""
+        self.model.to(self.device)
+
+        for name, mask in self.masks.items():
+            try:
+                module = dict(self.model.named_modules())[name]
+            except KeyError:
+                print(f"Warning: Layer {name} not found in model")
+                continue
+
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                # Apply mask by zeroing out weights
+                mask = mask.to(self.device)
+                module.weight.data *= mask
+
+                # Register mask as buffer to maintain it
+                if not hasattr(module, '_unstructured_mask'):
+                    module.register_buffer('_unstructured_mask', mask)
+                else:
+                    module._unstructured_mask = mask
+
+                # Register forward pre-hook to reapply mask
+                # (in case weights are modified during training)
+                def make_hook(mask_tensor):
+                    def hook(module, input):
+                        if hasattr(module, '_unstructured_mask'):
+                            module.weight.data *= module._unstructured_mask
+
+                    return hook
+
+                # Remove existing hooks for this module to avoid duplicates
+                if not hasattr(module, '_unstructured_hook'):
+                    hook_handle = module.register_forward_pre_hook(make_hook(mask))
+                    module._unstructured_hook = hook_handle
+
+        if self.replace_last_layer and self.selected_classes:
+            self._replace_last_layer()
+
+        return self.model
+
+    def _replace_last_layer(self):
+        """Replace last layer for selected classes (same as structured pruning)."""
+        layer_name, last_linear = list(self.model.named_modules())[-1]
+
+        if not isinstance(last_linear, nn.Linear):
+            print(f"Warning: Last layer is not Linear, skipping replacement")
+            return
+
+        new_linear = nn.Linear(
+            in_features=last_linear.in_features,
+            out_features=len(self.selected_classes),
+            bias=(last_linear.bias is not None),
+        )
+        new_linear.weight.data = last_linear.weight.data[self.selected_classes].clone()
+        if last_linear.bias is not None:
+            new_linear.bias.data = last_linear.bias.data[self.selected_classes].clone()
+
+        self._replace_module(layer_name, new_linear)
+
+    def _replace_module(self, module_name, new_module):
+        """Helper to replace a module in the model."""
+        parts = module_name.split(".")
+        parent = self.model
+        for name in parts[:-1]:
+            parent = getattr(parent, name)
+        setattr(parent, parts[-1], new_module)

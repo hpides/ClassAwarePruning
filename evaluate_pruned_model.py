@@ -83,16 +83,14 @@ def adjust_model_for_pruned_weights(model, weights):
             model = replace_module(model, name, new_module)
         else:
             continue
-        
-
-
     return model
+
 
 def measure(config):
 
     wandb.init(
             project="ClassAwarePruning",
-            entity="smilla-fox",
+            entity="sjoze",
             config=config,
             tags=["imgnet_shuffle"]
     )
@@ -123,6 +121,8 @@ def measure(config):
     model = adjust_model_for_pruned_weights(model, weights)
     model.load_state_dict(weights)
     print("Pruned model results:")
+    mapping = {new_idx: orig_class for new_idx, orig_class in enumerate(sorted(config["selected_classes"]))}
+    print(f"MAPPING: {mapping}")
     accuracy_new, class_accuracies_new, inference_time_new, times_new = measure_inference_time_and_accuracy(
         data_loader=subset_test_loader,
         model=model.to(torch.device("cuda")),
@@ -132,7 +132,8 @@ def measure(config):
         all_classes=True,
         print_results=True,
         selected_classes=config["selected_classes"],
-        with_onnx=False
+        with_onnx=False,
+        mapping=mapping
     )
 
     print("Original model results:")
@@ -145,7 +146,8 @@ def measure(config):
         all_classes=True,
         print_results=True,
         selected_classes=config["selected_classes"],
-        with_onnx=False
+        with_onnx=False,
+        mapping=mapping
     )
 
     inference_time_ratio = (inference_time_new / inference_time_old) if inference_time_old > 0 else 0

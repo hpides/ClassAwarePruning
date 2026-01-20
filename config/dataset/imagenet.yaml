@@ -1,2 +1,4 @@
 name: imagenet
 num_classes: 1000
+subsample_ratio: null
+subsample_size_per_class: 3

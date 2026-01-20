@@ -19,4 +19,5 @@ dependencies = [
     "torch-pruning>=1.5.3",
     "torchvision>=0.22.1",
     "wandb>=0.21.0",
+    "torchpruner @ git+https://github.com/marcoancona/TorchPruner.git"
 ]

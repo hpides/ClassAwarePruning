@@ -3,6 +3,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import wandb
+from typing import Dict
 
 from metrics import calculate_model_accuracy
 
@@ -24,13 +25,20 @@ def train_model(
     best_accuracy = 0.0
     best_epoch = 1
 
+    print("=" * 60)
+    print(f"Starting training for {num_epochs} epochs")
+    print(f"Train batches per epoch: {len(train_loader)}")
+    print(f"Train samples: {len(train_loader.dataset)}")
+    print(f"Test samples: {len(test_loader.dataset)}")
+    print(f"Model architecture:\n{model}")
+    print("=" * 60)
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
         correct = 0
         total = 0
-
         for inputs, labels in train_loader:
+            #print(f"@@@@@ LABELS: {labels}", flush=True)
             inputs, labels = inputs.to(device), labels.to(device)
 
             optimizer.zero_grad()
@@ -38,7 +46,6 @@ def train_model(
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-
             # Track loss and accuracy
             running_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -74,7 +81,7 @@ def train_model(
             best_epoch = epoch + 1
             if (epoch + 1) >= 10: 
                 print(f"Saving model with improved accuracy: {test_accuracy:.2f}%")
-                model_path = f"{model_name}_best_model_epoch_{epoch + 1}.pth"
+                model_path = f"model_weights/{model_name}_best_model_epoch_{epoch + 1}.pth"
                 torch.save(model.state_dict(), model_path)
 
     print("Training complete. Best accuracy achieved:", best_accuracy)
@@ -182,3 +189,35 @@ def filter_pruning_indices_for_resnet(all_indices: dict, model_name: str):
         new_indices.append(indices)
     
     return new_indices
+
+
+def get_unstructured_sparsity(model: nn.Module) -> Dict[str, float]:
+    """
+    Calculate actual sparsity (fraction of zero weights) in the model.
+    Useful for verifying unstructured pruning.
+
+    Args:
+        model: The pruned model
+
+    Returns:
+        Dictionary with layer-wise and global sparsity metrics
+    """
+    sparsity_info = {}
+    total_weights = 0
+    total_zero = 0
+
+    for name, module in model.named_modules():
+        if isinstance(module, (nn.Conv2d, nn.Linear)):
+            weights = module.weight.data
+            num_weights = weights.numel()
+            num_zero = (weights.abs() < 1e-8).sum().item()  # Use small threshold for floating point
+
+            layer_sparsity = num_zero / num_weights if num_weights > 0 else 0
+            sparsity_info[name] = layer_sparsity
+
+            total_weights += num_weights
+            total_zero += num_zero
+
+    sparsity_info['global'] = total_zero / total_weights if total_weights > 0 else 0
+
+    return sparsity_info

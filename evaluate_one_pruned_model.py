@@ -4,7 +4,7 @@ import wandb
 import torch
 import torch.nn as nn
 from metrics import measure_inference_time
-from data_loader import dataloaderFactorys
+from data_loader import dataloaderFactories
 from models import get_model
 from metrics import get_parameter_ratio
 
@@ -92,12 +92,12 @@ def measure(config):
 
     wandb.init(
             project="ClassAwarePruning",
-            entity="smilla-fox",
+            entity="sjoze",
             config=config,
             tags=["test_cpu"]
     )
 
-    dataloader_factory = dataloaderFactorys[config["dataset.name"]](
+    dataloader_factory = dataloaderFactories[config["dataset.name"]](
         train_batch_size=config["batch_size"],
         test_batch_size=config["batch_size"],
         selected_classes=config["selected_classes"],
