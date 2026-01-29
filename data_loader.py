@@ -103,14 +103,16 @@ class DataLoaderFactory:
 
     def get_subset_dataloaders(self):
         indices_train, indices_test = self._get_selected_indices()
+        #print(f"***** GOT INDICES: {indices_train} ***** and ***** {indices_test}")
 
         # Use RemappedSubset instead of Subset
         subset_dataset_train = RemappedSubset(self.train_data_set, indices_train, self.selected_classes)
         subset_dataset_test = RemappedSubset(self.test_data_set, indices_test, self.selected_classes)
+        #print(f"***** CREATED SUBSET DATASETS: {subset_dataset_train} ***** and ***** {subset_dataset_test}")
 
         subset_train_data_loader = DataLoader(
             subset_dataset_train,
-            batch_size=self.num_pruning_samples,
+            batch_size=self.train_batch_size,
             shuffle=False,
         )
         subset_test_data_loader = DataLoader(
@@ -118,6 +120,8 @@ class DataLoaderFactory:
             batch_size=self.test_batch_size,
             shuffle=False,
         )
+        #print(f"***** CREATED SUBSET DATALOADERS: {subset_train_data_loader} ***** and ***** {subset_test_data_loader}")
+
         return subset_train_data_loader, subset_test_data_loader
 
 

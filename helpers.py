@@ -2,26 +2,33 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+from omegaconf import DictConfig, OmegaConf, ListConfig
 import wandb
 from typing import Dict
 
 from metrics import calculate_model_accuracy
 
 
-def train_model(
-    model: nn.Module,
-    model_name: str,
-    train_loader: DataLoader,
-    test_loader: DataLoader,
-    criterion: nn.Module,
-    optimizer: torch.optim.Optimizer,
-    device: str,
-    scheduler=None,
-    num_epochs=20,
-    log_results=False,
-    num_classes=10,
+def train(
+        cfg: DictConfig,
+        model: nn.Module,
+        train_loader: DataLoader,
+        test_loader: DataLoader,
+        device: str,
+
+        scheduler=None,
+        num_epochs=20,
+        log_results=False,
+        num_classes=10,
+        retrain=False,
 ):
-    """Function to train the model."""
+    criterion = nn.CrossEntropyLoss()
+    optimizer = get_optimizer(
+        cfg.training.optimizer, model, cfg.training.lr if not retrain else cfg.training.lr_retrain,
+        cfg.training.weight_decay
+    )
+    model_name = cfg.model.name,
+
     best_accuracy = 0.0
     best_epoch = 1
 
@@ -30,24 +37,31 @@ def train_model(
     print(f"Train batches per epoch: {len(train_loader)}")
     print(f"Train samples: {len(train_loader.dataset)}")
     print(f"Test samples: {len(test_loader.dataset)}")
-    print(f"Model architecture:\n{model}")
+    #print(f"Model architecture:\n{model}")
     print("=" * 60)
+    print(f"+++++ GPU memory right before first epoch: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+    model.train()
     for epoch in range(num_epochs):
-        model.train()
         running_loss = 0.0
         correct = 0
         total = 0
         for inputs, labels in train_loader:
             #print(f"@@@@@ LABELS: {labels}", flush=True)
             inputs, labels = inputs.to(device), labels.to(device)
+            print(f"+++++ GPU memory after loading inputs and labels to device: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
             optimizer.zero_grad()
             outputs = model(inputs)
+            print(f"+++++ GPU memory after calculating outputs: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             loss = criterion(outputs, labels)
+            #print(f"+++++ GPU memory after calculating loss: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             loss.backward()
+            #print(f"+++++ GPU memory after backwards step: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             optimizer.step()
+            #print(f"+++++ GPU memory after optimizer step: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             # Track loss and accuracy
             running_loss += loss.item()
+            #print(f"+++++ GPU memory after adding running loss: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             _, predicted = outputs.max(1)
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
@@ -60,7 +74,7 @@ def train_model(
         epoch_acc_train = 100.0 * correct / total
 
         test_accuracy, _ = calculate_model_accuracy(
-            model, device, test_loader, print_results=False, all_classes=False, num_classes=num_classes
+            model, device, test_loader, print_results=False, all_classes=False, num_classes=num_classes, selected_classes=cfg.selected_classes
         )
 
         if log_results:
@@ -72,7 +86,8 @@ def train_model(
             })
 
         print(
-            f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}, Train Accuracy: {epoch_acc_train:.2f}, Test Accuracy: {test_accuracy:.2f}"
+            f"***** Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}, Train Accuracy: {epoch_acc_train:.2f}, "
+            f"Test Accuracy: {test_accuracy:.2f}", flush=True
         )
 
         # Save after 10 epochs and if accuracy improves
@@ -80,11 +95,11 @@ def train_model(
             best_accuracy = test_accuracy
             best_epoch = epoch + 1
             if (epoch + 1) >= 10: 
-                print(f"Saving model with improved accuracy: {test_accuracy:.2f}%")
+                print(f"@@@@@ Saving model with improved accuracy: {test_accuracy:.2f}%")
                 model_path = f"model_weights/{model_name}_best_model_epoch_{epoch + 1}.pth"
                 torch.save(model.state_dict(), model_path)
 
-    print("Training complete. Best accuracy achieved:", best_accuracy)
+    print("@@@@@ Training complete. Best accuracy achieved:", best_accuracy)
     return best_accuracy, best_epoch
 
 

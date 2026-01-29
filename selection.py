@@ -215,11 +215,12 @@ class LRPPruning(PruningSelection):
 
     def select(self, model: nn.Module):
         """Selects filters to prune based on the LAP Pruning method."""
+        model.to(self.device),
         data_iter = iter(self.data_loader)
         X, y = next(data_iter)
 
         indices = get_candidates_to_prune(
-            model=model.to(self.device),
+            model=model,
             pruning_ratio=self.pruning_ratio,
             X_test=X.to(self.device),
             y_test_true=y.to(self.device),
@@ -380,9 +381,9 @@ class TorchPrunerAttributions(PruningSelection):
         return indices
 
 
-##########################################
-#########  UNSTRUCTURED PRUNING  #########
-##########################################
+###################################
+# --------- UNSTRUCTURED -------- #
+###################################
 
 class UnstructuredPruningBase(PruningSelection):
     """Base class for unstructured (weight-level) pruning methods."""

@@ -236,15 +236,25 @@ class DepGraphPruner:
         DG = tp.DependencyGraph().build_dependency(
             self.model, example_inputs=torch.randn(1, 3, 224, 224).to(self.device)
         )
+        print(f"@@@@@ DEPENDENCY GRAPH: {DG}")
+        #print(f"@@@@@ PRUNING INDICES: {self.pruning_indices}")
+        print(f"@@@@@ SELECTED CLASSES: {self.selected_classes}")
 
         for name, indices in self.pruning_indices.items():
+            module = dict(self.model.named_modules())[name]
             # Prune the Conv2d layers
             group = DG.get_pruning_group(
-                dict(self.model.named_modules())[name],
+                module,
                 tp.prune_conv_out_channels,
                 idxs=indices,
             )
 
+            #print(f"@@@@@ GROUP: {group}")
+            #print(f"@@@@@ NAME AND INDICES: {name}, {indices}")
+
+            #if len(indices) >= module.out_channels * 0.95:
+            #    print(f"##### WARNING: Attempting to prune {len(indices)}/{module.out_channels} channels - reducing")
+            #    indices = indices[:int(module.out_channels * 0.9)]
             if DG.check_pruning_group(group):  # avoid over-pruning, i.e., channels=0.
                 group.prune()
             else:
@@ -255,6 +265,7 @@ class DepGraphPruner:
                 idxs=indices,
                 )
                 group.prune()
+        #print(f"@@@@@ MODEL AFTER PRUNING BUT BEFORE LAST LAYER SWAP: {self.model}")
 
         if self.replace_last_layer and self.selected_classes:
             self._replace_last_layer()
@@ -263,6 +274,10 @@ class DepGraphPruner:
 
     def _replace_last_layer(self):
         layer_name, last_linear = list(self.model.named_modules())[-1]
+        #print(f"@@@@@ LAYER NAME: {layer_name}")
+        #print(f"@@@@@ LAST LINEAR LAYER: {last_linear}")
+        #print(f"@@@@@ IN FEATURES: {last_linear.in_features}")
+        #print(f"@@@@@ OUT FEATURES: {len(self.selected_classes)}")
         new_linear = nn.Linear(
             in_features=last_linear.in_features,
             out_features=len(self.selected_classes),
