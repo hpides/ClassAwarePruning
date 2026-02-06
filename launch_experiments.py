@@ -5,6 +5,36 @@ import sys
 from typing import List, Dict, Any
 from pathlib import Path
 from datetime import datetime
+import numpy as np
+
+same_classes =  [   724,  # pirate, pirate ship
+                    628,  # liner, ocean liner
+                    484,  # catamaran
+                    576,  # gondola
+                    625,  # lifeboat
+                    814,  # speedboat
+                    472,  # canoe
+                    780,  # schooner
+                    554,  # fireboat
+                    871]  # trimaran
+
+diff_classes = [    985,  # daisy (flower)
+                    483,    # castle (building)
+                    812,    # space shuttle (vehicle)
+                    924,    # guacamole (food)
+                    107,  # jellyfish (fish)
+                    398,  # abacus (mathematical tool)
+                    970,    # alp (geographical feature)
+                    51,     # triceratops (extinct dinosaur)
+                    145,  # king penguin (bird)
+                    916]
+
+def evenly_spaced_prefixes(ns, total_classes=1000):
+    max_n = max(ns)
+    # Build a single evenly spaced ordering
+    base = np.linspace(0, total_classes - 1, max_n, dtype=int)
+    # Nested prefixes (like range(100, 100+n))
+    return [base[:n].tolist() for n in ns]
 
 
 class ExperimentLauncher:
@@ -335,18 +365,18 @@ def experiment_similar_images(launcher: ExperimentLauncher):
     launcher.base_config = {
         "dataset": "imagenet",
         "training.use_pretrained_model": True,  # If Imagenet
-        "dataset.subsample_size_per_class": 100,
+        "dataset.subsample_size_per_class": 300,
         "selected_classes": [
-            472,    # canoe
-            484,    # catamaran
-            554,    # fireboat
-            576,    # gondola
-            625,    # lifeboat
-            628,    # liner, ocean liner
-            724,    # pirate, pirate ship
-            780,    # schooner
-            814,    # speedboat
-            871],   # trimaran
+            724,  # pirate, pirate ship
+            628,  # liner, ocean liner
+            484,  # catamaran
+            576,  # gondola
+            625,  # lifeboat
+            814,  # speedboat
+            472,  # canoe
+            780,  # schooner
+            554,  # fireboat
+            871],  # trimaran
         "log_results": True
     }
 
@@ -354,7 +384,8 @@ def experiment_similar_images(launcher: ExperimentLauncher):
         param_grid={
             "pruning": ["lrp", "torchpruner", "ocap", "ln_structured", "unstructured_magnitude"],
             "model": ["vgg16", "resnet18"],
-            "pruning.pruning_ratio": [0.5, 0.75, 0.9],
+            "pruning.pruning_ratio": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6,
+                                      0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99],
         },
         name_template="SIM_{pruning}_{model}_{pruning.pruning_ratio}_" + timestamp
     )
@@ -368,9 +399,9 @@ def experiment_different_images(launcher: ExperimentLauncher):
     launcher.base_config = {
         "dataset": "imagenet",
         "training.use_pretrained_model": True,  # If Imagenet
-        "dataset.subsample_size_per_class": 100,
+        "dataset.subsample_size_per_class": 300,
         "selected_classes": [
-            0,      # tench, Tinca tinca (fish)
+            107,    # jellyfish (fish)
             145,    # king penguin (bird)
             398,    # abacus (mathematical tool)
             483,    # castle (building)
@@ -387,7 +418,8 @@ def experiment_different_images(launcher: ExperimentLauncher):
         param_grid={
             "pruning": ["lrp", "torchpruner", "ocap", "ln_structured", "unstructured_magnitude"],
             "model": ["vgg16", "resnet18"],
-            "pruning.pruning_ratio": [0.5, 0.75, 0.9],
+            "pruning.pruning_ratio": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6,
+                                      0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99],
         },
         name_template="DIF_{pruning}_{model}_{pruning.pruning_ratio}_" + timestamp
     )
@@ -400,7 +432,7 @@ def experiment_different_amount_of_images(launcher: ExperimentLauncher):
     launcher.base_config = {
         "dataset": "imagenet",
         "training.use_pretrained_model": True,  # If Imagenet
-        "dataset.subsample_size_per_class": 100,
+        "dataset.subsample_size_per_class": 300,
         "log_results": True
     }
 
@@ -408,8 +440,10 @@ def experiment_different_amount_of_images(launcher: ExperimentLauncher):
         param_grid={
             "pruning": ["ocap", "ln_structured", "lrp", "torchpruner", "unstructured_magnitude"],
             "model": ["vgg16", "resnet18"],
-            "pruning.pruning_ratio": [0.5, 0.75, 0.9],
-            "selected_classes": [list(range(n)) for n in [3, 10, 30, 50]]
+            "pruning.pruning_ratio": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6,
+                                      0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99],
+            #"selected_classes": [list(range(100, 100 + n)) for n in [3, 10, 30, 50]]
+            "selected_classes": evenly_spaced_prefixes([3, 10, 30, 50])
         },
         name_template="AMT_{pruning}_{model}_{pruning.pruning_ratio}_{selected_classes}_" + timestamp
     )
@@ -426,9 +460,8 @@ def experiment_debug(launcher: ExperimentLauncher):
         #"dataset": "cifar10",
         #"training.use_pretrained_model": False,
         "training.use_pretrained_model": True,  # If Imagenet
-        "dataset.subsample_size_per_class": 100,
+        "dataset.subsample_size_per_class": 300,
         #"dataset.subsample_ratio": 0.8,
-        "selected_classes": [10,20,30,40],
         #"selected_classes": [0,1,2],
         "log_results": True,
         #"pruning.pruning_ratio": [0.3],
@@ -436,10 +469,11 @@ def experiment_debug(launcher: ExperimentLauncher):
 
     launcher.add_sweep(
         param_grid={
-            "pruning": ["ln_structured", "torchpruner", "lrp", "ocap"],
+            "num_pruning_samples": [25],
+            "pruning": ["ocap"],
             "model": ["vgg16", "resnet18"],
-            "pruning.pruning_ratio": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
-                                      0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
+            "pruning.pruning_ratio": [0.9, 0.93, 0.99, 0.999],
+            "selected_classes": evenly_spaced_prefixes([10])
         },
         name_template="DEBUG_{pruning}_" + timestamp
     )
@@ -462,34 +496,35 @@ def experiment_all_small(launcher: ExperimentLauncher):
             "pruning": ["ln_structured", "torchpruner", "lrp", "ocap", "unstructured_magnitude"],
             "model": ["resnet18", "vgg16"],
             "pruning.pruning_ratio": [0.2, 0.5, 0.9],
+            #"pruning.pruning_ratio": [0.5, 0.9],
             "selected_classes": [
                 [
-                    0,      # tench, Tinca tinca (fish)
-                    145,    # king penguin (bird)
-                    398,    # abacus (mathematical tool)
+                    985,  # daisy (flower)
                     483,    # castle (building)
                     812,    # space shuttle (vehicle)
                     924,    # guacamole (food)
+                    107,  # jellyfish (fish)
+                    398,  # abacus (mathematical tool)
                     970,    # alp (geographical feature)
-                    985,    # daisy (flower)
                     51,     # triceratops (extinct dinosaur)
+                    145,  # king penguin (bird)
                     916],
                 [
-                    472,  # canoe
+                    724,  # pirate, pirate ship
+                    628,  # liner, ocean liner
                     484,  # catamaran
-                    554,  # fireboat
                     576,  # gondola
                     625,  # lifeboat
-                    628,  # liner, ocean liner
-                    724,  # pirate, pirate ship
-                    780,  # schooner
                     814,  # speedboat
+                    472,  # canoe
+                    780,  # schooner
+                    554,  # fireboat
                     871],  # trimaran
-                    list(range(3)),
-                    list(range(20)),
+                    list(range(100, 100 + 3)),
+                    list(range(100, 100 + 20)),
                 ],
         },
-        name_template="DEBUG_{pruning}_" + timestamp
+        name_template="SML_{pruning}_{model}_PR{pruning.pruning_ratio}_SC{selected_classes}_" + timestamp
     )
 
 
@@ -508,14 +543,408 @@ def experiment_batchsize(launcher: ExperimentLauncher):
 
     launcher.add_sweep(
         param_grid={
-            "pruning": ["ln_structured", "lrp", "ocap", "unstructured_magnitude"],
-            "model": ["vgg16"],
-            "pruning.pruning_ratio": [0.5],
-            "training.batch_size_train": [256, 128],
+            "pruning": ["ln_structured", "torchpruner"],
+            "model": ["vgg16", "resnet18"],
+            "pruning.pruning_ratio": [0.3, 0.5, 0.9],
+            "training.batch_size_train": [128, 64],
         },
-        name_template="DEBUG_{pruning}_{training.batch_size_train}" + timestamp
+        name_template="BATCH_{pruning}_{training.batch_size_train}" + timestamp
     )
 
+######################################################
+##################    PRIMARY TESTS     ##############
+######################################################
+
+def experiment_unstructured_dif_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - Unstructured Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["unstructured_magnitude"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [diff_classes],
+            "pruning.pruning_ratio": [0.0, 0.33, 0.67, 0.9, 0.95, 0.97, 0.99],
+        },
+        name_template="UNS_DIFF_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_unstructured_same_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - Unstructured Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["unstructured_magnitude"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [same_classes],
+            "pruning.pruning_ratio": [0.0, 0.33, 0.67, 0.9, 0.95, 0.97, 0.99],
+        },
+        name_template="UNS_SAME_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_unstructured_diff_amt(launcher: ExperimentLauncher):
+    print("\nExperiment - Unstructured Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["unstructured_magnitude"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": evenly_spaced_prefixes([3, 10, 30]),
+            "pruning.pruning_ratio": [0.0, 0.33, 0.67, 0.9, 0.95, 0.97, 0.99],
+        },
+        name_template="UNS_AMT_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+
+
+def experiment_ln_struct_dif_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - ln_struct Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ln_structured"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [diff_classes],
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="LNS_DIFF_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_ln_struct_same_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - ln_struct Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ln_structured"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [same_classes],
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="LNS_SAME_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_ln_struct_diff_amt(launcher: ExperimentLauncher):
+    print("\nExperiment - ln_struct Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ln_structured"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": evenly_spaced_prefixes([3, 10, 30]),
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="LNS_AMT_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+
+
+def experiment_lrp_dif_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - lrp Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["lrp"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [diff_classes],
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="LRP_DIFF_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_lrp_same_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - lrp Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["lrp"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [same_classes],
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="LRP_SAME_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_lrp_diff_amt(launcher: ExperimentLauncher):
+    print("\nExperiment - lrp Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["lrp"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": evenly_spaced_prefixes([3, 10, 30]),
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="LRP_AMT_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+
+
+def experiment_tp_dif_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - torchpruner Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["torchpruner"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [diff_classes],
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="TRP_DIFF_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_tp_same_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - torchpruner Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["torchpruner"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [same_classes],
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="TRP_SAME_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_tp_diff_amt(launcher: ExperimentLauncher):
+    print("\nExperiment - torchpruner Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["torchpruner"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": evenly_spaced_prefixes([3, 10, 30]),
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="TRP_AMT_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+
+
+
+
+def experiment_ocap_dif_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - OCAP Diff")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "num_pruning_samples": 25,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ocap"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [diff_classes],
+            "pruning.pruning_ratio": [0.9, 0.93, 0.97, 0.99, 0.993, 0.997, 0.999, 0.9993,  0.9997,  0.9999],
+        },
+        name_template="OCAP_DIFF_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_ocap_same_sim(launcher: ExperimentLauncher):
+    print("\nExperiment - OCAP Same")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "num_pruning_samples": 25,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ocap"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": [same_classes],
+            "pruning.pruning_ratio": [0.9, 0.93, 0.97, 0.99, 0.993, 0.997, 0.999, 0.9993,  0.9997,  0.9999],
+        },
+        name_template="OCAP_SAME_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+def experiment_ocap_diff_amt(launcher: ExperimentLauncher):
+    print("\nExperiment - OCAP Amount")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "num_pruning_samples": 25,
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ocap"],
+            "model": ["vgg16", "resnet18"],
+            "selected_classes": evenly_spaced_prefixes([3, 10, 30]),
+            "pruning.pruning_ratio": [0.9, 0.93, 0.97, 0.99, 0.993, 0.997, 0.999, 0.9993,  0.9997,  0.9999],
+        },
+        name_template="OCAP_AMT_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+
+def experiment_lrp_pruning_samples(launcher: ExperimentLauncher):
+    print("\nExperiment - LRP Pruning Samples")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "selected_classes": [0, 111, 222, 333, 444, 555, 666, 777, 888, 999],
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ocap"],
+            "model": ["resnet18"],
+            "num_pruning_samples": [10, 20, 30, 50, 100, 200, 500],
+            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
+        },
+        name_template="LRP_Pruning_Samples_PS{num_pruning_samples}_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
+
+
+def experiment_ocap_pruning_samples(launcher: ExperimentLauncher):
+    print("\nExperiment - OCAP Pruning Samples")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    launcher.base_config = {
+        "dataset": "imagenet",
+        "training.use_pretrained_model": True,  # If Imagenet
+        "dataset.subsample_size_per_class": 500,
+        "selected_classes": [0, 111, 222, 333, 444, 555, 666, 777, 888, 999],
+        "log_results": True,
+    }
+
+    launcher.add_sweep(
+        param_grid={
+            "pruning": ["ocap"],
+            "model": ["resnet18"],
+            "num_pruning_samples": [10, 20, 30, 50, 100, 200, 500],
+            "pruning.pruning_ratio": [0.9, 0.93, 0.97, 0.99, 0.993, 0.997, 0.999, 0.9993,  0.9997,  0.9999],
+        },
+        name_template="OCAP_Pruning_Samples_PS{num_pruning_samples}_{pruning}_{pruning.pruning_ratio}" + timestamp
+    )
 
 ######################################################
 ##################       MAIN       ##################
@@ -573,7 +1002,31 @@ Examples:
         9: experiment_debug,
         10: experiment_all_small,
         11: experiment_batchsize,
+
+        12: experiment_unstructured_dif_sim,
+        13: experiment_unstructured_diff_amt,
+        14: experiment_unstructured_same_sim,
+
+        15: experiment_ln_struct_dif_sim,
+        16: experiment_ln_struct_diff_amt,
+        17: experiment_ln_struct_same_sim,
+
+        18: experiment_lrp_dif_sim,
+        19: experiment_lrp_diff_amt,
+        20: experiment_lrp_same_sim,
+
+        21: experiment_tp_dif_sim,
+        22: experiment_tp_diff_amt,
+        23: experiment_tp_same_sim,
+
+        24: experiment_ocap_dif_sim,
+        25: experiment_ocap_diff_amt,
+        26: experiment_ocap_same_sim,
+
+        27: experiment_lrp_pruning_samples,
+        28: experiment_ocap_pruning_samples,
     }
+
 
     if args.experiment not in experiments:
         print(f"Error: Unknown example {args.experiment}")

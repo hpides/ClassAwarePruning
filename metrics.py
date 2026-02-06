@@ -30,7 +30,7 @@ def calculate_model_accuracy(
         # need to map the model's output to the correct classes
         #other_classes = set(range(num_classes)) - set(selected_classes)
         #selected_classes.extend(list(other_classes))
-        print(f"@@@@@ SELECTED CLASSES: {selected_classes}")
+        #print(f"@@@@@ SELECTED CLASSES: {selected_classes}")
         selected_classes = torch.tensor(selected_classes).to(device)
         #print(f"@@@@@ OTHER CLASSES: {other_classes}")
         num_classes = len(selected_classes)
@@ -79,10 +79,11 @@ def calculate_model_accuracy(
 def calculate_accuracy_for_selected_classes(class_accuracies, selected_classes):
     """Calculate accuracy for selected classes."""
     # Classes get mapped, hence [2,4,6] would become [0,1,2]
-    print(f"***** Class accuracies: {class_accuracies}")
+    #print(f"***** Class accuracies: {class_accuracies}")
     accuracies = [class_accuracies[i] for i in range(len(selected_classes))]
-    print(f"@@@@@ ACCURACIES: {accuracies}%")
+    #print(f"@@@@@ ACCURACIES: {accuracies}%")
     accuracy = sum(accuracies) / len(selected_classes)
+    #print(f"xxxxx ACCURACY FOR SELECTED CLASSES: {accuracy}%")
     return accuracy
 
 
@@ -215,19 +216,19 @@ def measure_inference_time_and_accuracy(
         # Get predictions
         _, predicted = torch.max(output.data, 1)
 
-        #print(f"***** PREDICTED: {predicted}")
+        #print(f"xxxxx PREDICTED: {predicted}")
 
         # Apply selected_classes mapping if needed
-        #print(f"***** SELECTED CLASSES: {selected_classes}")
+        #print(f"xxxxx SELECTED CLASSES: {selected_classes}")
         if selected_classes is not None:
             predicted = selected_classes[predicted]
-            #print(f"***** PREDICTED CLASSES: {predicted}")
+            #print(f"xxxxx PREDICTED CLASSES: {predicted}")
 
         # Map labels from [0,1,2] to original classes [4,6,8] if needed
         if mapping_tensor is not None:
-            #print(f"***** MAPPING TENSOR: {mapping_tensor}")
+            #print(f"xxxxx MAPPING TENSOR: {mapping_tensor}")
             labels_mapped = mapping_tensor[labels]
-            #print(f"***** MAPPED LABELS: {labels_mapped}")
+            #print(f"xxxxx MAPPED LABELS: {labels_mapped}")
         else:
             labels_mapped = labels
 
@@ -235,15 +236,15 @@ def measure_inference_time_and_accuracy(
         total += labels.size(0)
         correct += (predicted == labels_mapped).sum().item()
         c = (predicted == labels_mapped).squeeze()
-        #print(f"***** CORRECT: {c}")
+        #print(f"xxxxx CORRECT: {c}")
 
         # Per-class accuracy tracking
         for i in range(labels.size(0)):
             label = labels[i].item()
             class_correct[label] += c[i].item()
             class_total[label] += 1
-        #print(f"***** CLASS TOTAL: {class_total}")
-        #print(f"***** CLASS CORRECT: {class_correct}")
+        #print(f"xxxxx CLASS TOTAL: {class_total}")
+        #print(f"xxxxx CLASS CORRECT: {class_correct}")
 
     # Calculate final metrics
     accuracy = 100 * correct / total if total > 0 else 0
@@ -254,7 +255,7 @@ def measure_inference_time_and_accuracy(
             if class_total[i] > 0:
                 accuracy_i = 100 * class_correct[i] / class_total[i]
                 class_accuracies[i] = accuracy_i
-                print(f"Accuracy of class {mapping[i] if mapping is not None else i}: {accuracy_i:.2f}%")
+                print(f"xxxxx Accuracy of class {mapping[i] if mapping is not None else i}: {accuracy_i:.2f}%")
 
     inference_time = mean(times) if times else 0
     return accuracy, class_accuracies, inference_time, times

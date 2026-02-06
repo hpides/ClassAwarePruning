@@ -13,14 +13,15 @@ def train(
         cfg: DictConfig,
         model: nn.Module,
         train_loader: DataLoader,
-        test_loader: DataLoader,
+        val_loader: DataLoader,
         device: str,
-
         scheduler=None,
         num_epochs=20,
         log_results=False,
         num_classes=10,
         retrain=False,
+        patience=5,
+        min_delta=0.1
 ):
     criterion = nn.CrossEntropyLoss()
     optimizer = get_optimizer(
@@ -31,12 +32,13 @@ def train(
 
     best_accuracy = 0.0
     best_epoch = 1
+    epochs_without_improvement = 0
 
     print("=" * 60)
     print(f"Starting training for {num_epochs} epochs")
     print(f"Train batches per epoch: {len(train_loader)}")
     print(f"Train samples: {len(train_loader.dataset)}")
-    print(f"Test samples: {len(test_loader.dataset)}")
+    print(f"Val samples: {len(val_loader.dataset)}")
     #print(f"Model architecture:\n{model}")
     print("=" * 60)
     print(f"+++++ GPU memory right before first epoch: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
@@ -48,11 +50,11 @@ def train(
         for inputs, labels in train_loader:
             #print(f"@@@@@ LABELS: {labels}", flush=True)
             inputs, labels = inputs.to(device), labels.to(device)
-            print(f"+++++ GPU memory after loading inputs and labels to device: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+            #print(f"+++++ GPU memory after loading inputs and labels to device: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
             optimizer.zero_grad()
             outputs = model(inputs)
-            print(f"+++++ GPU memory after calculating outputs: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+            #print(f"+++++ GPU memory after calculating outputs: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             loss = criterion(outputs, labels)
             #print(f"+++++ GPU memory after calculating loss: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             loss.backward()
@@ -73,8 +75,8 @@ def train(
         epoch_loss = running_loss / len(train_loader)
         epoch_acc_train = 100.0 * correct / total
 
-        test_accuracy, _ = calculate_model_accuracy(
-            model, device, test_loader, print_results=False, all_classes=False, num_classes=num_classes, selected_classes=cfg.selected_classes
+        val_accuracy, _ = calculate_model_accuracy(
+            model, device, val_loader, print_results=False, all_classes=False, num_classes=num_classes, selected_classes=cfg.selected_classes
         )
 
         if log_results:
@@ -82,22 +84,32 @@ def train(
                 "epoch": epoch,
                 "loss": epoch_loss,
                 "train_accuracy_epoch": epoch_acc_train,
-                "test_accuracy_epoch": test_accuracy,
+                "test_accuracy_epoch": val_accuracy,
             })
 
         print(
             f"***** Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}, Train Accuracy: {epoch_acc_train:.2f}, "
-            f"Test Accuracy: {test_accuracy:.2f}", flush=True
+            f"Val Accuracy: {val_accuracy:.2f}", flush=True
         )
 
         # Save after 10 epochs and if accuracy improves
-        if test_accuracy > best_accuracy:
-            best_accuracy = test_accuracy
+        if val_accuracy > best_accuracy + min_delta:
+            best_accuracy = val_accuracy
             best_epoch = epoch + 1
+            epochs_without_improvement = 0
             if (epoch + 1) >= 10: 
-                print(f"@@@@@ Saving model with improved accuracy: {test_accuracy:.2f}%")
+                print(f"@@@@@ Saving model with improved accuracy: {val_accuracy:.2f}%")
                 model_path = f"model_weights/{model_name}_best_model_epoch_{epoch + 1}.pth"
                 torch.save(model.state_dict(), model_path)
+        else:
+            # No significant improvement
+            epochs_without_improvement += 1
+            print(f"@@@@@ No improvement for {epochs_without_improvement}/{patience} epochs")
+
+            if epochs_without_improvement >= patience:
+                print(f"@@@@@ Early stopping triggered after {epoch + 1} epochs")
+                print(f"@@@@@ Best accuracy: {best_accuracy:.2f}% at epoch {best_epoch}")
+                break
 
     print("@@@@@ Training complete. Best accuracy achieved:", best_accuracy)
     return best_accuracy, best_epoch

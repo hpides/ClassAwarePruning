@@ -5,7 +5,7 @@ defaults:
   - _self_
 
 selected_classes: [0,1,2] 
-num_pruning_samples: 128
+num_pruning_samples: null
 replace_last_layer: true
 log_results: true
 run_name: unstructured_pruning
@@ -18,9 +18,9 @@ training:
   train: true
   use_data_augmentation: true # set to false to make results deterministic in pruning
   retrain_after_pruning: true
-  retrain_epochs: 20  # 10
-  batch_size_train: 256 # 256
-  batch_size_test: 256 # 256
+  retrain_epochs: 100  # 10, higher because early stopping logic
+  batch_size_train: 128 # 256
+  batch_size_test: 128 # 256
   lr: 0.0005
   lr_retrain: 0.00001
   weight_decay: 1e-4

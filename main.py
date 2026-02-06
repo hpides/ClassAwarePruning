@@ -73,7 +73,7 @@ def main(cfg: DictConfig):
         subsample_ratio=cfg.dataset.subsample_ratio if "subsample_ratio" in cfg.dataset else None,
         subsample_size_per_class=cfg.dataset.subsample_size_per_class if "subsample_size_per_class" in cfg.dataset else None,
     )
-    train_loader, test_loader = dataloader_factory.get_dataloaders()
+    train_loader, val_loader, test_loader = dataloader_factory.get_dataloaders()
 
     print("\n" + "=" * 60)
     print("@@@@@ DATALOADER INFO")
@@ -81,13 +81,14 @@ def main(cfg: DictConfig):
     print(f"@@@@@ Train loader length: {len(train_loader)}")
     print(f"@@@@@ Train dataset size: {len(train_loader.dataset)}")
     print(f"@@@@@ Train batch size: {train_loader.batch_size}")
-    print(f"@@@@@ Total train batches: {len(train_loader)}")
+    print(f"@@@@@ Val loader length: {len(val_loader)}")
+    print(f"@@@@@ Val dataset size: {len(val_loader.dataset)}")
     print(f"@@@@@ Test loader length: {len(test_loader)}")
     print(f"@@@@@ Test dataset size: {len(test_loader.dataset)}")
     print("=" * 60 + "\n")
 
     # ----- Subset dataloader creation
-    subset_data_loader_train, subset_data_loader_test = dataloader_factory.get_subset_dataloaders()
+    subset_data_loader_train, subset_data_loader_val, subset_data_loader_test, pruning_dataloader = dataloader_factory.get_subset_dataloaders()
     #if cfg.pruning.name == "torchpruner":
     #    subset_data_loader_train_retrain = subset_data_loader_train
     #    subset_data_loader_train = dataloader_factory.get_small_train_loader()
@@ -97,6 +98,7 @@ def main(cfg: DictConfig):
     print("=" * 60)
     print(f"@@@@@ Subset train loader length: {len(subset_data_loader_train)}")
     print(f"@@@@@ Subset train dataset size: {len(subset_data_loader_train.dataset)}")
+    print(f"@@@@@ Subset val dataset size: {len(subset_data_loader_val.dataset)}")
     print(f"@@@@@ Subset test dataset size: {len(subset_data_loader_test.dataset)}")
     print("=" * 60 + "\n")
 
@@ -132,11 +134,16 @@ def main(cfg: DictConfig):
     # ----------- SELECTOR ---------- #
     ###################################
 
-    mapping = {new_idx: orig_class for new_idx, orig_class in enumerate(sorted(cfg.selected_classes))}
+    mapping = {new_idx: orig_class for new_idx, orig_class in enumerate(cfg.selected_classes)}
     print(f"@@@@@ Mapping of classes: {mapping}")
 
+    print(f"+++++ PRUNING DATALOADER USED: {pruning_dataloader is not None}")
+    if pruning_dataloader is not None:
+        print(f"+++++ DIFFERENCE: TRAIN: {len(subset_data_loader_train.dataset)}, PRUNING: {len(pruning_dataloader.dataset)}")
     selector = get_selector(
-        selector_config=cfg.pruning, data_loader=subset_data_loader_train, device=device,
+        selector_config=cfg.pruning,
+        data_loader=pruning_dataloader if pruning_dataloader is not None else subset_data_loader_train, # for ocap use only few images
+        device=device,
         skip_first_layers=cfg.model.skip_first_layers
     )
     print(f"@@@@@ Loaded selector: {selector}")
@@ -231,6 +238,14 @@ def main(cfg: DictConfig):
         #    print(f"Batch {batch_idx}: labels = {labels.tolist()}")
         print(f"Total: {len(subset_data_loader_train.dataset)} samples")
 
+        print("***** Subset")
+        print("\n" + "=" * 60)
+        print("Val DataLoader:")
+        print("=" * 60)
+        # for batch_idx, (inputs, labels) in enumerate(subset_data_loader_train):
+        #    print(f"Batch {batch_idx}: labels = {labels.tolist()}")
+        print(f"Total: {len(subset_data_loader_val.dataset)} samples")
+
         print("\n" + "=" * 60)
         print("Test DataLoader:")
         print("=" * 60)
@@ -241,7 +256,6 @@ def main(cfg: DictConfig):
 
         # ----- Base Model
         print("@@@@@ Before pruning:")
-
 
         _, class_accuracies_original, inference_time_before, inf_time_all_before = measure_inference_time_and_accuracy(
             subset_data_loader_test,
@@ -321,8 +335,9 @@ def main(cfg: DictConfig):
                     cfg,
                     pruned_model,
                     subset_data_loader_train,
-                    subset_data_loader_test,
+                    subset_data_loader_val,
                     device,
+                    num_epochs=cfg.training.retrain_epochs,
                     retrain=True
                 )
             end = time.perf_counter()
@@ -347,6 +362,8 @@ def main(cfg: DictConfig):
             accuracy_after_retraining = calculate_accuracy_for_selected_classes(
                 class_accuracies_pruned_r, cfg.selected_classes
             )
+
+            print(f"xxxxx ACCURACY AFTER RETRAINING: {accuracy_after_retraining:.2f}")
 
             inference_time_ratio_retraining = (
                         inference_time_after_r / inference_time_before) if inference_time_before > 0 else 0
