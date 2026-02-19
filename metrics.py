@@ -30,9 +30,9 @@ def calculate_model_accuracy(
         # need to map the model's output to the correct classes
         #other_classes = set(range(num_classes)) - set(selected_classes)
         #selected_classes.extend(list(other_classes))
-        #print(f"@@@@@ SELECTED CLASSES: {selected_classes}")
+        #print(f"%%%%%% SELECTED CLASSES: {selected_classes}")
         selected_classes = torch.tensor(selected_classes).to(device)
-        #print(f"@@@@@ OTHER CLASSES: {other_classes}")
+        #print(f"%%%%%% OTHER CLASSES: {other_classes}")
         num_classes = len(selected_classes)
     class_correct = [0] * num_classes
     class_total = [0] * num_classes
@@ -71,7 +71,7 @@ def calculate_model_accuracy(
             if class_total[i] > 0:
                 accuracy_i = 100 * class_correct[i] / class_total[i]
                 class_accuracies[i] = accuracy_i
-                print(f"@@@@@ Accuracy of class {i}: {accuracy_i:.2f}%")
+                print(f"%%%%%% Accuracy of class {i}: {accuracy_i:.2f}%")
             
     return accuracy, class_accuracies
 
@@ -81,7 +81,7 @@ def calculate_accuracy_for_selected_classes(class_accuracies, selected_classes):
     # Classes get mapped, hence [2,4,6] would become [0,1,2]
     #print(f"***** Class accuracies: {class_accuracies}")
     accuracies = [class_accuracies[i] for i in range(len(selected_classes))]
-    #print(f"@@@@@ ACCURACIES: {accuracies}%")
+    #print(f"%%%%%% ACCURACIES: {accuracies}%")
     accuracy = sum(accuracies) / len(selected_classes)
     #print(f"xxxxx ACCURACY FOR SELECTED CLASSES: {accuracy}%")
     return accuracy

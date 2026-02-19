@@ -4,7 +4,7 @@ import torch.fx as fx
 import torch_pruning as tp
 import copy
 from torchvision.models.resnet import BasicBlock, Bottleneck
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 
 class StructuredPruner:
@@ -236,9 +236,9 @@ class DepGraphPruner:
         DG = tp.DependencyGraph().build_dependency(
             self.model, example_inputs=torch.randn(1, 3, 224, 224).to(self.device)
         )
-        print(f"@@@@@ DEPENDENCY GRAPH: {DG}")
-        #print(f"@@@@@ PRUNING INDICES: {self.pruning_indices}")
-        print(f"@@@@@ SELECTED CLASSES: {self.selected_classes}")
+        print(f"%%%%%% DEPENDENCY GRAPH: {DG}")
+        #print(f"%%%%%% PRUNING INDICES: {self.pruning_indices}")
+        print(f"%%%%%% SELECTED CLASSES: {self.selected_classes}")
 
         for name, indices in self.pruning_indices.items():
             module = dict(self.model.named_modules())[name]
@@ -249,8 +249,8 @@ class DepGraphPruner:
                 idxs=indices,
             )
 
-            #print(f"@@@@@ GROUP: {group}")
-            #print(f"@@@@@ NAME AND INDICES: {name}, {indices}")
+            #print(f"%%%%%% GROUP: {group}")
+            #print(f"%%%%%% NAME AND INDICES: {name}, {indices}")
 
             #if len(indices) >= module.out_channels * 0.95:
             #    print(f"##### WARNING: Attempting to prune {len(indices)}/{module.out_channels} channels - reducing")
@@ -265,7 +265,7 @@ class DepGraphPruner:
                 idxs=indices,
                 )
                 group.prune()
-        #print(f"@@@@@ MODEL AFTER PRUNING BUT BEFORE LAST LAYER SWAP: {self.model}")
+        #print(f"%%%%%% MODEL AFTER PRUNING BUT BEFORE LAST LAYER SWAP: {self.model}")
 
         if self.replace_last_layer and self.selected_classes:
             self._replace_last_layer()
@@ -274,10 +274,10 @@ class DepGraphPruner:
 
     def _replace_last_layer(self):
         layer_name, last_linear = list(self.model.named_modules())[-1]
-        #print(f"@@@@@ LAYER NAME: {layer_name}")
-        #print(f"@@@@@ LAST LINEAR LAYER: {last_linear}")
-        #print(f"@@@@@ IN FEATURES: {last_linear.in_features}")
-        #print(f"@@@@@ OUT FEATURES: {len(self.selected_classes)}")
+        #print(f"%%%%%% LAYER NAME: {layer_name}")
+        #print(f"%%%%%% LAST LINEAR LAYER: {last_linear}")
+        #print(f"%%%%%% IN FEATURES: {last_linear.in_features}")
+        #print(f"%%%%%% OUT FEATURES: {len(self.selected_classes)}")
         new_linear = nn.Linear(
             in_features=last_linear.in_features,
             out_features=len(self.selected_classes),
@@ -320,100 +320,181 @@ class ZeroInsertion(nn.Module):
 #########  UNSTRUCTURED PRUNING  #########
 ##########################################
 
-class UnstructuredPruner:
+class UnstructuredMagnitudePruner:
     """
-    Applies unstructured (weight-level) pruning masks to a model.
+    Applies magnitude-based global unstructured pruning to a model.
 
-    Unlike structured pruning, this doesn't remove filters but zeros out individual weights.
-    No speedup benefits, but useful for accuracy comparison baselines.
+    Prunes weights globally across specified layers based on their absolute magnitude,
+    zeroing out the smallest weights while preserving the sparsity pattern.
     """
 
     def __init__(
             self,
             model: nn.Module,
-            masks: Dict[str, torch.Tensor],
+            sparsity: float,
+            layer_types: Tuple[type, ...] = (nn.Conv2d, nn.Linear),
+            exclude_layers: List[str] = None,
             replace_last_layer: bool = True,
-            selected_classes: List[int] = [],
-            device: str = "cpu"
+            selected_classes: List[int] = None,
+            device: str = None
     ):
         """
         Args:
             model: The model to prune
-            masks: Dictionary mapping layer names to binary masks (1=keep, 0=prune)
+            sparsity: Global sparsity ratio (0.0 to 1.0). E.g., 0.5 = prune 50% of weights
+            layer_types: Tuple of layer types to prune (default: Conv2d and Linear)
+            exclude_layers: List of layer names to exclude from pruning (e.g., ['classifier'])
             replace_last_layer: Whether to replace the final classification layer
-            selected_classes: List of target class indices
-            device: Device to run on
+            selected_classes: List of target class indices for class-aware pruning
+            device: Device to run on (auto-detected if None)
         """
         self.model = copy.deepcopy(model)
-        self.masks = masks
+        self.sparsity = sparsity
+        self.layer_types = layer_types
+        self.exclude_layers = exclude_layers or []
         self.replace_last_layer = replace_last_layer
-        self.selected_classes = selected_classes
-        self.device = device
+        self.selected_classes = selected_classes or []
 
-    def prune(self):
-        """Apply pruning masks to the model."""
+        # Auto-detect device
+        if device is None:
+            self.device = next(model.parameters()).device
+        else:
+            self.device = torch.device(device)
+
+    def prune(self) -> nn.Module:
+        """
+        Apply global magnitude-based unstructured pruning to the model.
+
+        Returns:
+            Pruned model with weights zeroed and last layer replaced (if specified)
+        """
         self.model.to(self.device)
 
-        for name, mask in self.masks.items():
-            try:
-                module = dict(self.model.named_modules())[name]
-            except KeyError:
-                print(f"Warning: Layer {name} not found in model")
+        # Collect all prunable parameters
+        parameters_to_prune = []
+
+        for name, module in self.model.named_modules():
+            # Skip excluded layers
+            if any(exclude in name for exclude in self.exclude_layers):
                 continue
 
-            if isinstance(module, (nn.Conv2d, nn.Linear)):
-                # Apply mask by zeroing out weights
-                mask = mask.to(self.device)
-                module.weight.data *= mask
+            # Check if module is a prunable layer type
+            if isinstance(module, self.layer_types):
+                parameters_to_prune.append((module, 'weight'))
 
-                # Register mask as buffer to maintain it
-                if not hasattr(module, '_unstructured_mask'):
-                    module.register_buffer('_unstructured_mask', mask)
-                else:
-                    module._unstructured_mask = mask
+        if not parameters_to_prune:
+            print("Warning: No parameters found to prune")
+            return self.model
 
-                # Register forward pre-hook to reapply mask
-                # (in case weights are modified during training)
-                def make_hook(mask_tensor):
-                    def hook(module, input):
-                        if hasattr(module, '_unstructured_mask'):
-                            module.weight.data *= module._unstructured_mask
+        # Perform global magnitude-based pruning
+        self._global_unstructured_pruning(parameters_to_prune)
 
-                    return hook
-
-                # Remove existing hooks for this module to avoid duplicates
-                if not hasattr(module, '_unstructured_hook'):
-                    hook_handle = module.register_forward_pre_hook(make_hook(mask))
-                    module._unstructured_hook = hook_handle
-
+        # Replace last layer if needed
         if self.replace_last_layer and self.selected_classes:
             self._replace_last_layer()
 
         return self.model
 
-    def _replace_last_layer(self):
-        """Replace last layer for selected classes (same as structured pruning)."""
-        layer_name, last_linear = list(self.model.named_modules())[-1]
+    def _global_unstructured_pruning(self, parameters_to_prune: List[Tuple[nn.Module, str]]):
+        """
+        Apply global magnitude-based pruning across all specified parameters.
 
-        if not isinstance(last_linear, nn.Linear):
-            print(f"Warning: Last layer is not Linear, skipping replacement")
+        This is optimized for GPU execution and follows PyTorch's global_unstructured approach.
+        """
+        # Gather all weights into a single tensor for efficient threshold computation
+        all_weights = []
+        weight_shapes = []
+
+        for module, param_name in parameters_to_prune:
+            weight = getattr(module, param_name)
+            all_weights.append(weight.data.abs().flatten())
+            weight_shapes.append(weight.shape)
+
+        # Concatenate all weights on GPU for fast processing
+        all_weights_tensor = torch.cat(all_weights)
+
+        # Calculate the threshold based on global sparsity
+        num_weights = all_weights_tensor.numel()
+        num_to_prune = int(self.sparsity * num_weights)
+
+        if num_to_prune == 0:
+            print("Warning: Sparsity too low, no weights pruned")
             return
 
+        # Use kthvalue for efficient threshold finding (GPU-accelerated)
+        threshold = torch.kthvalue(all_weights_tensor, num_to_prune)[0]
+
+        # Apply masks to each parameter
+        for module, param_name in parameters_to_prune:
+            weight = getattr(module, param_name)
+
+            # Create binary mask (1=keep, 0=prune)
+            mask = (weight.data.abs() > threshold).to(weight.dtype)
+
+            # Apply mask by zeroing out weights
+            weight.data.mul_(mask)
+
+            # Register mask as a buffer to persist it
+            module.register_buffer(f'{param_name}_mask', mask)
+
+            # Register forward pre-hook to maintain sparsity during training
+            self._register_pruning_hook(module, param_name)
+
+    def _register_pruning_hook(self, module: nn.Module, param_name: str):
+        """Register a forward pre-hook to maintain pruning mask."""
+        mask_name = f'{param_name}_mask'
+
+        # Remove existing hook if present
+        if hasattr(module, '_pruning_hook_handle'):
+            module._pruning_hook_handle.remove()
+
+        def pruning_hook(mod, input):
+            if hasattr(mod, mask_name):
+                mask = getattr(mod, mask_name)
+                param = getattr(mod, param_name)
+                param.data.mul_(mask)
+
+        hook_handle = module.register_forward_pre_hook(pruning_hook)
+        module._pruning_hook_handle = hook_handle
+
+    def _replace_last_layer(self):
+        """Replace the last linear layer for class-aware pruning."""
+        # Find the last Linear layer
+        last_linear = None
+        last_linear_name = None
+
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Linear):
+                last_linear = module
+                last_linear_name = name
+
+        if last_linear is None:
+            print("Warning: No Linear layer found, skipping last layer replacement")
+            return
+
+        # Create new linear layer with selected classes
         new_linear = nn.Linear(
             in_features=last_linear.in_features,
             out_features=len(self.selected_classes),
             bias=(last_linear.bias is not None),
+            device=self.device
         )
-        new_linear.weight.data = last_linear.weight.data[self.selected_classes].clone()
-        if last_linear.bias is not None:
-            new_linear.bias.data = last_linear.bias.data[self.selected_classes].clone()
 
-        self._replace_module(layer_name, new_linear)
+        # Copy weights for selected classes
+        with torch.no_grad():
+            new_linear.weight.data = last_linear.weight.data[self.selected_classes].clone()
+            if last_linear.bias is not None:
+                new_linear.bias.data = last_linear.bias.data[self.selected_classes].clone()
 
-    def _replace_module(self, module_name, new_module):
-        """Helper to replace a module in the model."""
+        # Replace the module
+        self._replace_module(last_linear_name, new_linear)
+
+    def _replace_module(self, module_name: str, new_module: nn.Module):
+        """Helper to replace a module in the model hierarchy."""
         parts = module_name.split(".")
         parent = self.model
+
         for name in parts[:-1]:
             parent = getattr(parent, name)
+
         setattr(parent, parts[-1], new_module)
