@@ -7,9 +7,9 @@ from datetime import datetime
 import numpy as np
 
 
-######################################################
-##############   CONSTANTS AND HELPERS   #############
-######################################################
+###################################
+# ----- CONSTANTS + HELPERS ----- #
+###################################
 
 similar_classes =  [724,  # pirate, pirate ship
                     628,  # liner, ocean liner
@@ -225,9 +225,9 @@ class ExperimentLauncher:
         print(f"%%%%%% {"=" * 80}\n")
 
 
-######################################################
-###############       EXPERIMENTS       ##############
-######################################################
+###################################
+# --------- EXPERIMENTS --------- #
+###################################
 
 def experiment_kd(launcher: ExperimentLauncher):
     print("%%%%%% Experiment - KD")
@@ -272,30 +272,6 @@ def experiment_batchsize(launcher: ExperimentLauncher):
     )
 
 
-def experiment_lrp_pruning_samples(launcher: ExperimentLauncher):
-    print("%%%%%% Experiment - LRP Pruning Samples")
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    launcher.base_config = {
-        "dataset": "imagenet",
-        "training.use_pretrained_model": True,  # If Imagenet
-        "dataset.subsample_size_per_class": 500,
-        "selected_classes": [0, 111, 222, 333, 444, 555, 666, 777, 888, 999],
-        "log_results": True,
-    }
-
-    launcher.add_sweep(
-        param_grid={
-            "pruning": ["ocap"],
-            "model": ["resnet18"],
-            "num_pruning_samples": [10, 20, 30, 50, 100, 200, 500],
-            "pruning.pruning_ratio": [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99],
-        },
-        name_template="LRP_Pruning_Samples_PS{num_pruning_samples}_{pruning}_{pruning.pruning_ratio}_" + timestamp
-    )
-
-
 def experiment_ocap_pruning_samples(launcher: ExperimentLauncher):
     print("%%%%%% Experiment - OCAP Pruning Samples")
 
@@ -320,9 +296,9 @@ def experiment_ocap_pruning_samples(launcher: ExperimentLauncher):
     )
 
 
-######################################################
-##############    PRIMARY EXPERIMENTS     ############
-######################################################
+###################################
+# -----  PRIMARY EXPERIMENTS ---- #
+###################################
 
 def experiment_unstructured_distinct(launcher: ExperimentLauncher):
     print("%%%%%% Experiment - Unstructured Distinct")
@@ -792,9 +768,9 @@ def experiment_sanity_check(launcher: ExperimentLauncher):
     )
 
 
-######################################################
-##################       MAIN       ##################
-######################################################
+###################################
+# ------------- MAIN ------------ #
+###################################
 
 def main():
     import argparse
@@ -868,8 +844,7 @@ def main():
 
         21: experiment_kd,
         22: experiment_batchsize,
-        23: experiment_lrp_pruning_samples,
-        24: experiment_ocap_pruning_samples,
+        23: experiment_ocap_pruning_samples,
     }
 
 

@@ -12,16 +12,14 @@ from fvcore.nn import FlopCountAnalysis
 from distillation import KnowledgeDistillation
 from metrics import (
     get_parameter_ratio,
-    measure_execution_time,
     get_model_size,
-    measure_inference_time_and_accuracy,
-    calculate_accuracy_for_selected_classes,
 )
 from helpers import (
     train,
-    get_optimizer,
     filter_pruning_indices_for_resnet,
-    get_unstructured_sparsity
+    get_unstructured_sparsity,
+    run_pruner,
+    evaluate
 )
 import os
 
@@ -32,7 +30,7 @@ import os
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: DictConfig):
-    # ----- Hardware initialization
+    # Hardware initialization
     device = torch.device(
         "cuda" if torch.cuda.is_available()
         else "mps" if torch.backends.mps.is_available()
@@ -42,7 +40,7 @@ def main(cfg: DictConfig):
         device = torch.device(cfg.device)
     print(f"%%%%%% Using device: {device}")
 
-    # ----- WandB setup
+    # WandB Setup
     if cfg.log_results:
         wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
         wandb_cfg["device"] = device
@@ -54,9 +52,8 @@ def main(cfg: DictConfig):
         )
     print("%%%%%% Initialized WandB")
 
-    # ----- Fix pruning_ratio to always be a list
+    # Force pruning_ratio to always be a list (Hydra turns single item lists to floats)
     if not isinstance(cfg.pruning.pruning_ratio, (list, ListConfig)):
-        print("##### Pruning ratio is not a list")
         cfg.pruning.pruning_ratio = [cfg.pruning.pruning_ratio]
 
 
@@ -76,9 +73,9 @@ def main(cfg: DictConfig):
     )
     train_loader, val_loader, test_loader = dataloader_factory.get_dataloaders()
 
-    print("\n" + "=" * 60)
+    print(f"\n%%%%%% {"=" * 80}")
     print("%%%%%% DATALOADER INFO")
-    print("=" * 60)
+    print(f"%%%%%% {"=" * 80}")
     print(f"%%%%%% Train loader length: {len(train_loader)}")
     print(f"%%%%%% Train dataset size: {len(train_loader.dataset)}")
     print(f"%%%%%% Train batch size: {train_loader.batch_size}")
@@ -86,24 +83,19 @@ def main(cfg: DictConfig):
     print(f"%%%%%% Val dataset size: {len(val_loader.dataset)}")
     print(f"%%%%%% Test loader length: {len(test_loader)}")
     print(f"%%%%%% Test dataset size: {len(test_loader.dataset)}")
-    print("=" * 60 + "\n")
+    print(f"%%%%%% {"=" * 80}\n")
 
-    # ----- Subset dataloader creation
+    # Subset dataloader creation
     subset_data_loader_train, subset_data_loader_val, subset_data_loader_test, pruning_dataloader = dataloader_factory.get_subset_dataloaders()
-    #if cfg.pruning.name == "torchpruner":
-    #    subset_data_loader_train_retrain = subset_data_loader_train
-    #    subset_data_loader_train = dataloader_factory.get_small_train_loader()
 
-    print("\n" + "=" * 60)
+    print(f"\n%%%%%% {"=" * 80}")
     print("%%%%%% SUBSET DATALOADER INFO")
-    print("=" * 60)
+    print(f"%%%%%% {"=" * 80}")
     print(f"%%%%%% Subset train loader length: {len(subset_data_loader_train)}")
     print(f"%%%%%% Subset train dataset size: {len(subset_data_loader_train.dataset)}")
     print(f"%%%%%% Subset val dataset size: {len(subset_data_loader_val.dataset)}")
     print(f"%%%%%% Subset test dataset size: {len(subset_data_loader_test.dataset)}")
-    print("=" * 60 + "\n")
-
-    print(f"+++++ GPU memory after getting dataloaders: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+    print(f"%%%%%% {"=" * 80}\n")
 
     model = get_model(
         cfg.model.name, pretrained=cfg.training.use_pretrained_model, num_classes=cfg.dataset.num_classes,
@@ -111,12 +103,12 @@ def main(cfg: DictConfig):
     )
     model.to(device)
 
-    print(f"++++++ GPU memory after loading base model: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+    print(f"%%%%%% GPU memory after loading base model: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
     print(f"%%%%%% Loaded Model - Pretrained: {cfg.training.use_pretrained_model}, "
           f"Number of classes: {cfg.dataset.num_classes}, Dataset: {cfg.dataset.name}")
 
-    # ----- Train the model or load pretrained weights
+    # Train the model or load pretrained weights
     if cfg.training.train and not cfg.training.use_pretrained_model:
         print("%%%%%% Training Model")
         train(cfg, model, train_loader, test_loader, device)
@@ -132,21 +124,25 @@ def main(cfg: DictConfig):
 
 
     ###################################
-    # ----------- SELECTOR ---------- #
+    # ------- FILTER SELECTION ------ #
     ###################################
 
     selection_time, removal_time = 0, 0
 
+    # Mapping indices (e.g. [105, 305, 402] to the new output nodes [0, 1, 2])
     mapping = {new_idx: orig_class for new_idx, orig_class in enumerate(cfg.selected_classes)}
     print(f"%%%%%% Mapping of classes: {mapping}")
 
-    print(f"+++++ PRUNING DATALOADER USED: {pruning_dataloader is not None}")
+    # Specifically for OCAP where we need less pruning samples (~25 per class according to authors)
     if pruning_dataloader is not None:
-        print(f"+++++ DIFFERENCE: TRAIN: {len(subset_data_loader_train.dataset)}, PRUNING: {len(pruning_dataloader.dataset)}")
+        print(f"%%%%%% Smaller training dataloader in use - Originally: {len(subset_data_loader_train.dataset)}, "
+              f"Now using: {len(pruning_dataloader.dataset)}")
+
+    # ----- STRUCTURED FILTER SELECTION -----
     if not cfg.pruning.name.startswith("unstructured_"):
         selector = get_selector(
             selector_config=cfg.pruning,
-            data_loader=pruning_dataloader if pruning_dataloader is not None else subset_data_loader_train, # for ocap use only few images
+            data_loader=pruning_dataloader if pruning_dataloader is not None else subset_data_loader_train,
             device=device,
             skip_first_layers=cfg.model.skip_first_layers
         )
@@ -164,7 +160,6 @@ def main(cfg: DictConfig):
 
         for num, indices in enumerate(all_indices):
             print(f"%%%%%% Pruning ratio number {num}: {cfg.pruning.pruning_ratio[num]}")
-            # Structured pruning: indices are filter indices
             pruner = DepGraphPruner(
                 model=model,
                 indices=indices,
@@ -172,15 +167,13 @@ def main(cfg: DictConfig):
                 selected_classes=cfg.selected_classes,
                 device=device,
             )
-            start = time.perf_counter()
-            if cfg.pruning.pruning_ratio[num] > 0:
-                pruned_model = pruner.prune()
-                print("%%%%%% Model pruned successfully.")
-            else:
-                pruner._replace_last_layer()
-                pruned_model = pruner.model
-            removal_time = time.perf_counter() - start
+            # Filter Removal
+            pruned_model, removal_time = run_pruner(pruner, cfg.pruning.pruning_ratio[num])
+
+    # ----- UNSTRUCTURED FILTER SELECTION -----
     else:
+        # Dont need to make a distinction between selection and pruning, since we don't need to remove filters.
+        # We can simply set to zero
         pruner = UnstructuredMagnitudePruner(
             model=model,
             sparsity=cfg.pruning.pruning_ratio[0],
@@ -188,58 +181,19 @@ def main(cfg: DictConfig):
             selected_classes=cfg.selected_classes,
             device=device
         )
-        start = time.perf_counter()
-        if cfg.pruning.pruning_ratio[0] > 0:
-            pruned_model = pruner.prune()
-            print("%%%%%% Model pruned successfully.")
-        else:
-            pruner._replace_last_layer()
-            pruned_model = pruner.model
-
-    removal_time = time.perf_counter() - start
+        # Filter Removal
+        pruned_model, removal_time = run_pruner(pruner, cfg.pruning.pruning_ratio[0])
 
     pruning_time = selection_time + removal_time
-    print(f"Time spent on removing: {removal_time}", flush=True)
-    print(f"XXXXXX Time spent on pruning for {cfg.pruning.name} on dataset {cfg.selected_classes} and model {cfg.model.name}: {pruning_time}", flush=True)
-
-
-    print(f"++++++ GPU memory after pruning model: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
-
-
-    '''
-    import csv
-    import os
-    parameter_ratio = get_parameter_ratio(model, pruned_model)
-    pruned_param_ratio = 1 - parameter_ratio
-    print(f"++++++++++++++++++++++++++++++++++++")
-    print(f"Pruning ratio {cfg.pruning.pruning_ratio[num]} is equivalent to {pruned_param_ratio} pruned parameters.")
-    print(f"++++++++++++++++++++++++++++++++++++")
-
-    # Log to CSV
-    csv_file = "pruning_ratios.csv"
-    file_exists = os.path.isfile(csv_file)
-
-    with open(csv_file, 'a', newline='') as f:
-        writer = csv.writer(f)
-
-        # Write header if file is new
-        if not file_exists:
-            writer.writerow(['model', 'pruning_method', 'dataset', 'target_pruning_ratio', 'actual_pruned_parameters'])
-
-        # Write data
-        writer.writerow([
-            cfg.model.name,
-            cfg.pruning.name,
-            cfg.dataset.name,
-            cfg.pruning.pruning_ratio[num],
-            pruned_param_ratio
-        ])
-    return
-    '''
-
+    print(f"%%%%%% Time spent on pruning: {pruning_time} = filter selection ({selection_time} + filter removal {removal_time})")
+    print(f"%%%%%% GPU memory after pruning model: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
     print(f"%%%%%% Model architecture before:\n{model}")
     print(f"%%%%%% Model architecture after:\n{pruned_model}")
 
+    model_size_before = get_model_size(model)
+    print(f"%%%%%% Model size before pruning: {model_size_before} MB")
+    model_size_after = get_model_size(pruned_model)
+    print(f"%%%%%% Model size after pruning: {model_size_after} MB")
 
     ###################################
     # ---------- EVALUATION --------- #
@@ -249,80 +203,23 @@ def main(cfg: DictConfig):
     model.to(device)
     pruned_model.to(device)
 
-    print(f"++++++ GPU memory before starting evaluation: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+    print(f"%%%%%% GPU memory before starting evaluation: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
-    print("***** Subset")
-    print("\n" + "=" * 60)
-    print("Train DataLoader:")
-    print("=" * 60)
-    #for batch_idx, (inputs, labels) in enumerate(subset_data_loader_train):
-    #    print(f"Batch {batch_idx}: labels = {labels.tolist()}")
-    print(f"Total: {len(subset_data_loader_train.dataset)} samples")
-
-    print("***** Subset")
-    print("\n" + "=" * 60)
-    print("Val DataLoader:")
-    print("=" * 60)
-    # for batch_idx, (inputs, labels) in enumerate(subset_data_loader_train):
-    #    print(f"Batch {batch_idx}: labels = {labels.tolist()}")
-    print(f"Total: {len(subset_data_loader_val.dataset)} samples")
-
-    print("\n" + "=" * 60)
-    print("Test DataLoader:")
-    print("=" * 60)
-    #for batch_idx, (inputs, labels) in enumerate(subset_data_loader_test):
-    #    print(f"Batch {batch_idx}: labels = {labels.tolist()}")
-    print(f"Total: {len(subset_data_loader_test.dataset)} samples")
-    print("=" * 60 + "\n")
-
-    # ----- Base Model
-    print("%%%%%% Before pruning:")
-
-    _, class_accuracies_original, inference_time_before, inf_time_all_before = measure_inference_time_and_accuracy(
-        subset_data_loader_test,
-        model,
-        device,
-        cfg.training.batch_size_test,
-        cfg.dataset.num_classes,
-        all_classes=True,
-        print_results=True,
-        selected_classes=None,
-        with_onnx=cfg.inference_with_onnx,
-        mapping=mapping
-    )
-    accuracy_before = calculate_accuracy_for_selected_classes(
-        class_accuracies_original, cfg.selected_classes
+    # ----- BEFORE PRUNING (BASE) -----
+    accuracy_before, inference_time_before, _ = evaluate(
+        model, subset_data_loader_test, cfg, device, 1, mapping, label="Before pruning"
     )
 
-    # ----- Pruned Model
-    print("%%%%%% After pruning:")
-    _, class_accuracies_pruned, inference_time_after, inf_time_all_after = measure_inference_time_and_accuracy(
-        subset_data_loader_test,
-        pruned_model,
-        device,
-        cfg.training.batch_size_test,
-        cfg.dataset.num_classes,
-        all_classes=True,
-        print_results=True,
-        selected_classes=(
-            cfg.selected_classes.copy() if cfg.replace_last_layer else None
-        ),
-        with_onnx=cfg.inference_with_onnx,
-        mapping=mapping
-    )
-    accuracy_after = calculate_accuracy_for_selected_classes(
-        class_accuracies_pruned, cfg.selected_classes
+    # ----- AFTER PRUNING -----
+    accuracy_after, inference_time_after, _ = evaluate(
+        pruned_model, subset_data_loader_test, cfg, device, inference_time_before, mapping,
+        label="After pruning"
     )
 
-    print(f"+++++ GPU memory after calculating base and pruned model accuracies: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
-
-    print(f"%%%%%% Accuracy before pruning: {accuracy_before:.2f}")
-    print(f"%%%%%% Accuracy after pruning: {accuracy_after:.2f}")
-
+    # ----- KNOWLEDGE DISTILLATION SETUP -----
     if cfg.use_knowledge_distillation:
         cfg.pruning.name = "unstructured_magnitude"
-        parameter_ratio = get_parameter_ratio(model, pruned_model)
-        cfg.pruning.pruning_ratio = [parameter_ratio]
+        cfg.pruning.pruning_ratio = [get_parameter_ratio(model, pruned_model)]
         unstr_pruner = UnstructuredMagnitudePruner(
             model=model,
             sparsity=cfg.pruning.pruning_ratio[0],
@@ -330,109 +227,48 @@ def main(cfg: DictConfig):
             selected_classes=cfg.selected_classes,
             device=device
         )
-        if cfg.pruning.pruning_ratio[0] > 0:
-            teacher_model = unstr_pruner.prune()
-            print("%%%%%% Model pruned successfully.")
-        else:
-            unstr_pruner._replace_last_layer()
-            teacher_model = unstr_pruner.model
+        # Structured pruned model becomes the student and unstructured pruned model becomes the teacher, which
+        # will get trained before it distills its knowledge into the student, hence the swap in
         student_model = pruned_model
-        pruned_model = teacher_model.to(device)
+        pruned_model, _ = run_pruner(unstr_pruner, cfg.pruning.pruning_ratio[0])
+        pruned_model = pruned_model.to(device)
 
-
+    # ----- RETRAINING -----
     retraining_time = 0
     best_accuracy, best_epoch, accuracy_after_retraining, inference_time_ratio_retraining = None, None, None, None
     if cfg.training.retrain_after_pruning:
         print("%%%%%% Retraining the pruned model...")
-        #if cfg.pruning.name == "torchpruner":
-        #    subset_data_loader_train = subset_data_loader_train_retrain
+        print(f"+++++ GPU memory right before training: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
         start = time.perf_counter()
-        print(f"+++++ GPU memory right before going to training: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
         best_accuracy, best_epoch = train(
-            cfg,
-            pruned_model,
-            subset_data_loader_train,
-            subset_data_loader_val,
-            device,
-            num_epochs=cfg.training.retrain_epochs,
-            retrain=True
+            cfg, pruned_model,
+            subset_data_loader_train, subset_data_loader_val,
+            device, num_epochs=cfg.training.retrain_epochs, retrain=True
         )
-        end = time.perf_counter()
-        retraining_time = end - start
-
-        print("After Retraining:")
-        _, class_accuracies_pruned_r, inference_time_after_r, inf_time_all_after_r = measure_inference_time_and_accuracy(
-            subset_data_loader_test,
-            pruned_model,
-            device,
-            cfg.training.batch_size_test,
-            cfg.dataset.num_classes,
-            all_classes=True,
-            print_results=True,
-            selected_classes=(
-                cfg.selected_classes.copy() if cfg.replace_last_layer else None
-            ),
-            with_onnx=cfg.inference_with_onnx,
-            mapping=mapping
+        retraining_time = time.perf_counter() - start
+        accuracy_after_retraining, _, inference_time_ratio_retraining = evaluate(
+            pruned_model, subset_data_loader_test, cfg, device, inference_time_before, mapping,
+            label="After Retraining"
         )
 
-        accuracy_after_retraining = calculate_accuracy_for_selected_classes(
-            class_accuracies_pruned_r, cfg.selected_classes
-        )
-
-        print(f"xxxxx ACCURACY AFTER RETRAINING: {accuracy_after_retraining:.2f}")
-
-        inference_time_ratio_retraining = (
-                    inference_time_after_r / inference_time_before) if inference_time_before > 0 else 0
-
-
+    # ----- KNOWLEDGE DISTILLATION TRAINING -----
     if cfg.use_knowledge_distillation:
         kd = KnowledgeDistillation(
-            teacher_model=pruned_model,
-            student_model=student_model,
+            teacher_model=pruned_model, student_model=student_model,
             selected_classes=cfg.selected_classes,
-            temperature=3.0,
-            alpha=0.7,
-            lr=1e-3
+            temperature=3.0, alpha=0.7, lr=1e-3
         )
         student_model, _, _ = kd.train(
             train_loader=subset_data_loader_train,
             val_loader=subset_data_loader_val,
             epochs=100
         )
-        print(f"AFTER KNOWLEDGE DISTILLATION:")
-        _, class_accuracies_pruned_kd, inference_time_after_kd, inf_time_all_after_kd = measure_inference_time_and_accuracy(
-            subset_data_loader_test,
-            student_model,
-            device,
-            cfg.training.batch_size_test,
-            cfg.dataset.num_classes,
-            all_classes=True,
-            print_results=True,
-            selected_classes=(
-                cfg.selected_classes.copy() if cfg.replace_last_layer else None
-            ),
-            with_onnx=cfg.inference_with_onnx,
-            mapping=mapping
+        accuracy_kd, _, _ = evaluate(
+            student_model, subset_data_loader_test, cfg, device, inference_time_before, mapping,
+            label="After Knowledge Distillation"
         )
-        accuracy_kd = calculate_accuracy_for_selected_classes(
-            class_accuracies_pruned_kd, cfg.selected_classes
-        )
-        print(f"ACCURACIES AFTER KNOWLEDGE DISTILLATION: {class_accuracies_pruned_kd}")
-        print(f"ACCURACY AFTER KNOWLEDGE DISTILLATION: {accuracy_kd}")
-        print(f"INFERENCE TIME BEFORE: {inference_time_before}")
-        print(f"INFERENCE TIME AFTER KNOWLEDGE DISTILLATION: {inference_time_after_kd}")
-        print(f"ALL INFERENCE TIME AFTER KNOWLEDGE DISTILLATION: {inf_time_all_after_kd}")
-        parameter_ratio = get_parameter_ratio(model, student_model)
-        print(f"PARAMETER RATIO AFTER KNOWLEDGE DISTILLATION: {1 - parameter_ratio,}")
-        print(f"MODEL SIZE BASE: {get_model_size(model)}")
-        print(f"MODEL SIZE AFTER KNOWLEDGE DISTILLATION: {get_model_size(student_model)}")
-        flops_before = FlopCountAnalysis(model, torch.randn(1, 3, 224, 224).to(device))
-        flops_after = FlopCountAnalysis(student_model, torch.randn(1, 3, 224, 224).to(device))
-        print(f"FLOPs base: {flops_before.total() / 1e6} MFLOPs")
-        print(f"FLOPs AFTER KNOWLEDGE DISTILLATION: {flops_after.total() / 1e6} MFLOPs")
 
-
+    ######## DELETE AFTER ########
 
     # To reload later (skipping pruning & retraining entirely):
     #
@@ -466,12 +302,20 @@ def main(cfg: DictConfig):
     print(f"       Pruning strategy:{cfg.pruning.name}")
     print(f"       Pruned params:   {1 - get_parameter_ratio(model, pruned_model)})")
     print(f"       Dataset:         {cfg.selected_classes[:5]}")
-    return
 
+    ######## DELETE END ########
 
+    ###################################
+    # ----------- LOGGING ----------- #
+    ###################################
+
+    # Model parameters
     model_size_before = get_model_size(model)
+    print(f"%%%%%% Model size before pruning: {model_size_before} MB")
     model_size_after = get_model_size(pruned_model)
+    print(f"%%%%%% Model size after pruning: {model_size_after} MB")
     parameter_ratio = get_parameter_ratio(model, pruned_model)
+    print(f"%%%%%% Pruned parameters ratio: {1 - parameter_ratio}")
     global_pruning_ratio = None if cfg.pruning.name.startswith("unstructured_") else selector.global_pruning_ratio
 
     # Flop Analysis
@@ -486,9 +330,6 @@ def main(cfg: DictConfig):
     inference_time_ratio = (inference_time_after / inference_time_before) if inference_time_before > 0 else 0
     print(f"%%%%%% Inference time ratio: {inference_time_ratio}")
 
-    print(f"%%%%%% Model size before pruning: {model_size_before} MB")
-    print(f"%%%%%% Model size after pruning: {model_size_after} MB")
-    print(f"%%%%%% Pruned parameters ratio: {1 - parameter_ratio}")
     if cfg.pruning.name.startswith("unstructured_"):
         sparsity_info = get_unstructured_sparsity(pruned_model)
         print(f"%%%%%% Actual global sparsity: {sparsity_info['global']:.4f}")
@@ -507,8 +348,6 @@ def main(cfg: DictConfig):
                 "model_size_ratio": model_size_after / model_size_before,
                 "parameter_ratio": parameter_ratio,
                 "gloabal_pruning_ratio": global_pruning_ratio,
-                "class_accuracies_original": class_accuracies_original,
-                "class_accuracies_pruned": class_accuracies_pruned,
                 "inference_time_batch_before": inference_time_before,
                 "inference_time_batch_after": inference_time_after,
                 "inference_time_ratio": inference_time_ratio,
@@ -524,8 +363,6 @@ def main(cfg: DictConfig):
                 "pruning_time": pruning_time,
                 "retraining_time": retraining_time,
                 "total_time": pruning_time + retraining_time,
-                "inference_time_all_before": inf_time_all_before,
-                "inference_time_all_after": inf_time_all_after,
                 "best_accuracy_retraining": best_accuracy,
                 "best_epoch_retraining": best_epoch,
                 "accuracy_after_retraining": accuracy_after_retraining,

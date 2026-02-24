@@ -393,6 +393,28 @@ class UnstructuredMagnitudePruner:
         if self.replace_last_layer and self.selected_classes:
             self._replace_last_layer()
 
+        # Bake masks in and remove buffers to avoid doubling model size
+        self._make_permanent()
+
+        return self.model
+
+    def _make_permanent(self):
+        """
+        Permanently apply pruning masks: bake zeros into weights,
+        then remove masks and hooks to restore original model size.
+        """
+        for name, module in self.model.named_modules():
+            mask_name = 'weight_mask'
+            if hasattr(module, mask_name):
+                # Mask is already applied to weight.data, so just clean up
+                # Remove the hook
+                if hasattr(module, '_pruning_hook_handle'):
+                    module._pruning_hook_handle.remove()
+                    del module._pruning_hook_handle
+
+                # Remove the mask buffer
+                del module._buffers[mask_name]
+
         return self.model
 
     def _global_unstructured_pruning(self, parameters_to_prune: List[Tuple[nn.Module, str]]):

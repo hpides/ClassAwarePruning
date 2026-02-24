@@ -1,12 +1,60 @@
 import torch
 import torch.nn as nn
-import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from omegaconf import DictConfig, OmegaConf, ListConfig
 import wandb
 from typing import Dict
+import time
 
-from metrics import calculate_model_accuracy
+from metrics import calculate_model_accuracy, measure_inference_time_and_accuracy, calculate_accuracy_for_selected_classes
+
+
+def run_pruner(pruner, ratio):
+    """
+    Prune if ratio > 0, otherwise just replace the last layer.
+
+    Returns:
+        Tuple: Pruned model and time needed for filter removal.
+    """
+    start = time.perf_counter()
+    if ratio > 0:
+        pruned_model = pruner.prune()
+        print("%%%%%% Model pruned successfully.")
+    else:
+        pruner._replace_last_layer()
+        pruned_model = pruner.model
+    return pruned_model, time.perf_counter() - start
+
+
+def evaluate(model, loader, cfg, device, inference_time_before, mapping, label):
+    """
+    Run inference + accuracy measurement.
+
+    Args:
+
+    Returns:
+        Tuple: Accuracy, Inference time, Ratio of inference time.
+    """
+    print(f"\n%%%%%% {'=' * 80}")
+    print(f"%%%%%% {label}:")
+    print(f"%%%%%% {'=' * 80}\n")
+    _, class_accuracies, inference_time, _ = measure_inference_time_and_accuracy(
+        loader, model, device,
+        cfg.training.batch_size_test,
+        cfg.dataset.num_classes,
+        all_classes=True,
+        print_results=True,
+        selected_classes=cfg.selected_classes.copy() if cfg.replace_last_layer else None,
+        with_onnx=cfg.inference_with_onnx,
+        mapping=mapping
+    )
+    accuracy = calculate_accuracy_for_selected_classes(class_accuracies, cfg.selected_classes)
+    ratio = (inference_time / inference_time_before) if inference_time_before > 0 else 0
+    print(f"\n%%%%%% {'=' * 80}")
+    print(f"%%%%% STATS FOR {label}:")
+    print(f"%%%%% ACCURACY: {accuracy}, INFERENCE: {inference_time:.2f}, INFERENCE TIME RATIO: {ratio}")
+    print(f"%%%%%% {'=' * 80}\n")
+    return accuracy, inference_time, ratio
 
 
 def train(
@@ -157,49 +205,6 @@ def get_pruning_indices(masks):
         prune_indices = mask.logical_not().nonzero(as_tuple=False).squeeze(1)
         pruning_indices[name] = prune_indices.tolist()
     return pruning_indices
-
-
-def get_pruning_masks(indices: dict, model: nn.Module):
-    """Convert pruning indices to masks."""
-    masks = {}
-    for name, prune_indices in indices.items():
-        layer = dict(model.named_modules())[name]
-        mask = torch.ones(layer.out_channels, dtype=torch.bool)
-        mask[prune_indices] = False
-        masks[name] = mask
-    return masks
-
-
-def plot_accuracies(original_accuracies, pruned_accuracies, model_name):
-    # Plot the accuracies of the different classes before and after pruning stacked in the same plot
-    original_accuracies_list = [
-        original_accuracies[i] for i in range(len(original_accuracies))
-    ]
-    pruned_accuracies_list = [
-        pruned_accuracies[i] for i in range(len(pruned_accuracies))
-    ]
-    plt.figure(figsize=(10, 6))
-    x = range(len(original_accuracies_list))
-    plt.bar(x, original_accuracies_list, width=0.4, label="Original", align="center")
-    plt.bar(
-        [i + 0.4 for i in x],
-        pruned_accuracies_list,
-        width=0.4,
-        label="Pruned",
-        align="center",
-    )
-    plt.xlabel("Classes")
-    plt.ylabel("Accuracy (%)")
-    plt.title(f"Class-wise Accuracy Comparison for {model_name}")
-    plt.xticks(
-        [i + 0.2 for i in x], [str(i) for i in range(len(original_accuracies_list))]
-    )
-    plt.legend()
-    plt.grid(axis="y")
-    plt.tight_layout()
-    image_path = f"{model_name}_accuracy_comparison.png"
-    plt.savefig(image_path)
-    return image_path
 
 
 def filter_pruning_indices_for_resnet(all_indices: dict, model_name: str):

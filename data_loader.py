@@ -3,7 +3,6 @@ from torchvision import datasets, transforms
 from typing import List
 import random
 from collections import defaultdict
-import math
 from torch.utils.data import random_split
 import torch
 
@@ -117,20 +116,6 @@ class DataLoaderFactory:
             self.test_data_set, batch_size=self.test_batch_size, shuffle=False
         )
         return train_data_loader, val_data_loader, test_data_loader
-
-    '''
-    def get_small_train_loader(self):
-        indices = list(range(len(self.train_data_set)))
-        random.seed(42)
-        random.shuffle(indices)
-        indices = indices[:self.num_pruning_samples]
-        subset_dataset_train = Subset(self.train_data_set, indices)
-        return DataLoader(
-            subset_dataset_train,
-            batch_size=self.train_batch_size,
-            shuffle=False,  # Keep shuffle=False for deterministic ordering
-        )
-    '''
 
     def _get_selected_indices(self):
         raise NotImplementedError("This method should be implemented by subclasses.")
@@ -518,8 +503,8 @@ class GTSRB_DataLoaderFactory(DataLoaderFactory):   # TODO: Val dataset
 
 
 dataloaderFactories = {
+    "imagenet": Imagenet_Dataloader_Factory,
     "cifar10": CIFAR10_DataLoaderFactory,
     "imagenette": Imagenette_DataLoaderFactory,
-    "imagenet": Imagenet_Dataloader_Factory,
     "gtsrb": GTSRB_DataLoaderFactory,
 }
