@@ -21,7 +21,6 @@ from helpers import (
     run_pruner,
     evaluate
 )
-import os
 
 
 ###################################
@@ -173,7 +172,7 @@ def main(cfg: DictConfig):
     # ----- UNSTRUCTURED FILTER SELECTION -----
     else:
         # Dont need to make a distinction between selection and pruning, since we don't need to remove filters.
-        # We can simply set to zero
+        # We can simply set to zero.
         pruner = UnstructuredMagnitudePruner(
             model=model,
             sparsity=cfg.pruning.pruning_ratio[0],
@@ -268,42 +267,6 @@ def main(cfg: DictConfig):
             label="After Knowledge Distillation"
         )
 
-    ######## DELETE AFTER ########
-
-    # To reload later (skipping pruning & retraining entirely):
-    #
-    #   import torch
-    #   from models import get_model
-    #   # Rebuild the same pruned architecture first, then load weights:
-    #   pruned_model = torch.load("models/<filename>.pt", map_location=device)
-    #   pruned_model.eval()
-    #
-    # (torch.save stores the full model object, so no manual architecture
-    #  reconstruction is needed as long as the model class is importable.)
-    #
-    _params_before = sum(p.numel() for p in model.parameters())
-    _params_after  = sum(p.numel() for p in pruned_model.parameters())
-    _pruned_count  = _params_before - _params_after  # absolute number of pruned parameters
-
-    _save_dir = "models"
-    os.makedirs(_save_dir, exist_ok=True)
-
-    _model_filename = (
-        f"{cfg.model.name}"
-        f"__{cfg.pruning.name}"
-        f"__{1 - get_parameter_ratio(model, pruned_model)}"
-        f"__{cfg.selected_classes[:5]}"
-        ".pt"
-    )
-    _save_path = os.path.join(_save_dir, _model_filename)
-    torch.save(pruned_model, _save_path)
-    print(f"%%%%%% [SAVE] Pruned model saved to: {_save_path}")
-    print(f"       Model:           {cfg.model.name}")
-    print(f"       Pruning strategy:{cfg.pruning.name}")
-    print(f"       Pruned params:   {1 - get_parameter_ratio(model, pruned_model)})")
-    print(f"       Dataset:         {cfg.selected_classes[:5]}")
-
-    ######## DELETE END ########
 
     ###################################
     # ----------- LOGGING ----------- #

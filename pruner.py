@@ -7,6 +7,10 @@ from torchvision.models.resnet import BasicBlock, Bottleneck
 from typing import Dict, List, Tuple
 
 
+###################################
+# ---------- STRUCTURED --------- #
+###################################
+
 class StructuredPruner:
     def __init__(
         self,
@@ -316,9 +320,9 @@ class ZeroInsertion(nn.Module):
         return output
 
 
-##########################################
-#########  UNSTRUCTURED PRUNING  #########
-##########################################
+###################################
+# --------- UNSTRUCTURED -------- #
+###################################
 
 class UnstructuredMagnitudePruner:
     """

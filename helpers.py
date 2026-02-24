@@ -96,7 +96,7 @@ def train(
         correct = 0
         total = 0
         for inputs, labels in train_loader:
-            #print(f"@@@@@ LABELS: {labels}", flush=True)
+            #print(f"%%%%% LABELS: {labels}", flush=True)
             inputs, labels = inputs.to(device), labels.to(device)
             #print(f"+++++ GPU memory after loading inputs and labels to device: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
@@ -136,7 +136,7 @@ def train(
             })
 
         print(
-            f"***** Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}, Train Accuracy: {epoch_acc_train:.2f}, "
+            f"%%%%% Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}, Train Accuracy: {epoch_acc_train:.2f}, "
             f"Val Accuracy: {val_accuracy:.2f}", flush=True
         )
 
@@ -146,20 +146,20 @@ def train(
             best_epoch = epoch + 1
             epochs_without_improvement = 0
             if (epoch + 1) >= 10: 
-                print(f"@@@@@ Saving model with improved accuracy: {val_accuracy:.2f}%")
+                print(f"%%%%% Saving model with improved accuracy: {val_accuracy:.2f}%")
                 model_path = f"model_weights/{model_name}_best_model_epoch_{epoch + 1}.pth"
                 torch.save(model.state_dict(), model_path)
         else:
             # No significant improvement
             epochs_without_improvement += 1
-            print(f"@@@@@ No improvement for {epochs_without_improvement}/{patience} epochs")
+            print(f"%%%%% No improvement for {epochs_without_improvement}/{patience} epochs")
 
             if epochs_without_improvement >= patience:
-                print(f"@@@@@ Early stopping triggered after {epoch + 1} epochs")
-                print(f"@@@@@ Best accuracy: {best_accuracy:.2f}% at epoch {best_epoch}")
+                print(f"%%%%% Early stopping triggered after {epoch + 1} epochs")
+                print(f"%%%%% Best accuracy: {best_accuracy:.2f}% at epoch {best_epoch}")
                 break
 
-    print("@@@@@ Training complete. Best accuracy achieved:", best_accuracy)
+    print("%%%%% Training complete. Best accuracy achieved:", best_accuracy)
     return best_accuracy, best_epoch
 
 
