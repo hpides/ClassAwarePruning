@@ -206,7 +206,7 @@ def main(cfg: DictConfig):
 
     # ----- BEFORE PRUNING (BASE) -----
     accuracy_before, inference_time_before, _ = evaluate(
-        model, subset_data_loader_test, cfg, device, 1, mapping, label="Before pruning"
+        model, subset_data_loader_test, cfg, device, 0, mapping, label="Before pruning", is_pruned=False
     )
 
     # ----- AFTER PRUNING -----

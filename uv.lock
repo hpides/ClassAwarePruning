@@ -400,6 +400,7 @@ dependencies = [
     { name = "tensorboard-plugin-profile" },
     { name = "torch" },
     { name = "torch-pruning" },
+    { name = "torchpruner" },
     { name = "torchvision" },
     { name = "wandb" },
 ]
@@ -418,6 +419,7 @@ requires-dist = [
     { name = "tensorboard-plugin-profile", specifier = ">=2.20.5" },
     { name = "torch", specifier = ">=2.7.1" },
     { name = "torch-pruning", specifier = ">=1.5.3" },
+    { name = "torchpruner", git = "https://github.com/marcoancona/TorchPruner.git" },
     { name = "torchvision", specifier = ">=0.22.1" },
     { name = "wandb", specifier = ">=0.21.0" },
 ]
@@ -2889,7 +2891,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/87/03/2f2d63a8864e320384e041723e6bc3fd43b5dc8a0b1e4f0cdb4770d8d334/tensorboard_plugin_profile-2.20.5-cp312-none-macosx_12_0_arm64.whl", hash = "sha256:1d1cb6c57cd852beb51830d9b4c50b162d7a838fd87285fde6720f62491282b5", size = 3924, upload-time = "2025-08-01T21:49:21.486Z" },
     { url = "https://files.pythonhosted.org/packages/24/bd/4693b2b830059de57d5f5b23a75ff56cd8fc6943995e2e6aed7222e4983a/tensorboard_plugin_profile-2.20.5-cp312-none-manylinux2014_x86_64.whl", hash = "sha256:d63ca67eb89576918d13513d0366457c03f921a6c3f9ffae7662da055d1dcbf7", size = 3928, upload-time = "2025-08-01T22:13:59.592Z" },
     { url = "https://files.pythonhosted.org/packages/ae/a4/dd82b86ef721f11f4c797e98d3d965fd2e275af72bb2d9199ddbaec9425d/tensorboard_plugin_profile-2.20.5-cp312-none-win_amd64.whl", hash = "sha256:d287f268d7e2ecb0e6c892857d51f5a10e2758110b888bb04808f11c18f7b8b2", size = 3947, upload-time = "2025-08-01T22:06:18.972Z" },
-    { url = "https://files.pythonhosted.org/packages/00/0c/d38b6519d8bb6d25c37fa5879b25cc18bf93b53a54ce99347a9bbaa257f4/tensorboard_plugin_profile-2.20.5-py3-none-any.whl", hash = "sha256:384cd225d11e60f5c7b63527364282ed6c07282d2bc447c5a69687c52c606c0d", size = 3914, upload-time = "2025-08-01T22:14:59.384Z" },
 ]
 
 [[package]]
@@ -2913,6 +2914,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8a/11/965c6fd8e5cc254f1fe142d547387da17a8ebfd75a3455f637c663fb38a0/terminado-0.18.1.tar.gz", hash = "sha256:de09f2c4b85de4765f7714688fff57d3e75bad1f909b589fde880460c753fd2e", size = 32701, upload-time = "2024-03-12T14:34:39.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/9e/2064975477fdc887e47ad42157e214526dcad8f317a948dee17e1659a62f/terminado-0.18.1-py3-none-any.whl", hash = "sha256:a4468e1b37bb318f8a86514f65814e1afc977cf29b3992a4500d9dd305dcceb0", size = 14154, upload-time = "2024-03-12T14:34:36.569Z" },
+]
+
+[[package]]
+name = "thop"
+version = "0.1.1.post2209072238"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bb/0f/72beeab4ff5221dc47127c80f8834b4bcd0cb36f6ba91c0b1d04a1233403/thop-0.1.1.post2209072238-py3-none-any.whl", hash = "sha256:01473c225231927d2ad718351f78ebf7cffe6af3bed464c4f1ba1ef0f7cdda27", size = 15443, upload-time = "2022-09-07T14:38:37.211Z" },
 ]
 
 [[package]]
@@ -2981,6 +2993,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/60/49/0b61e96203d18a80e8ad45183cc888cfb70ff14a9d46d8e9103b44720567/torch_pruning-1.5.3.tar.gz", hash = "sha256:b25066fc03ec5e786992bd3f270d6047c921fa4c480c2927c2b964498513a9d2", size = 86126, upload-time = "2025-06-13T18:35:40.633Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/65/8122faa101be508c826efbbef3418daf9a46463b81cb425036a23283530d/torch_pruning-1.5.3-py3-none-any.whl", hash = "sha256:c8ac6c557d99feb33f2db7e02f893833605232e945609a9a2e5e868db9cc2195", size = 64348, upload-time = "2025-06-13T18:35:39.23Z" },
+]
+
+[[package]]
+name = "torchpruner"
+version = "0.1"
+source = { git = "https://github.com/marcoancona/TorchPruner.git#65f6e3a377b68783765aa473bcbab874dce18e5c" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "thop" },
 ]
 
 [[package]]
@@ -3216,7 +3239,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b6/39/2ce4c2cef10b447bbad0370257e993a5cf07b313a84761f1f7c447033dcd/xprof-2.20.5-cp312-none-macosx_12_0_arm64.whl", hash = "sha256:0af3987c5cfae6cf5f9ebbcc3d24e479e70f22f4e6a8c892f8864dc2e599d12c", size = 11278020, upload-time = "2025-08-01T21:49:19.271Z" },
     { url = "https://files.pythonhosted.org/packages/d8/4f/2a34f1e70667ec9a933f4a9dc04599cdb96cb2452d5bb706abdec753ce30/xprof-2.20.5-cp312-none-manylinux2014_x86_64.whl", hash = "sha256:7eeb12f3adb6e6292e6470c9033d53df4d7f8bf8578639bb1141fa27f2eb3e06", size = 13187175, upload-time = "2025-08-01T22:13:57.422Z" },
     { url = "https://files.pythonhosted.org/packages/97/39/c67ac4e4341f0ed323849834d6c0b2f059dedf1527f09d59f91ed97f4bda/xprof-2.20.5-cp312-none-win_amd64.whl", hash = "sha256:7da7166284a0e2e8a0a976229fdca1aa193fce19c18c28111e53f71d7edab23c", size = 11079708, upload-time = "2025-08-01T22:06:16.531Z" },
-    { url = "https://files.pythonhosted.org/packages/9a/11/1dea9b57f81773f295d4a5fee1b966b24ce129cc33eb355f098fdf81e4d1/xprof-2.20.5-py3-none-any.whl", hash = "sha256:dab92c84648ce9e4862ec49c7ac97a4fad2579a29ed3fc97dea3a7db084aa3f9", size = 6208535, upload-time = "2025-08-01T22:14:55.824Z" },
 ]
 
 [[package]]

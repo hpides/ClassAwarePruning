@@ -47,11 +47,11 @@ def evenly_spaced_prefixes(num_samples, total_classes=1000):
     E.g., for five classes it would return [0, 249, 499, 749, 999].
 
     Args:
-        num_samples: Number of samples you need from the dataset.
-        total_classes: How many classes are in the dataset in total, default 1000 for ImageNet.
+        num_samples (int): Number of samples you need from the dataset.
+        total_classes (int): How many classes are in the dataset in total, default 1000 for ImageNet.
 
     Returns:
-        [int]: List of indices of selected classesö
+        List[int]: List of indices of selected classes
     """
     max_n = max(num_samples)
     # Build a single evenly spaced ordering
@@ -104,7 +104,7 @@ class ExperimentLauncher:
                         },
                         name_template="{pruning}_{model}"
                     )
-                    # Creates 4 experiments: ocap_vgg16, ocap_resnet18, ln_structured_vgg16, ln_structured_resnet18
+                    Creates 4 experiments: ocap_vgg16, ocap_resnet18, ln_structured_vgg16, ln_structured_resnet18
         """
         keys = list(param_grid.keys())
         values = list(param_grid.values())

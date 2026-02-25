@@ -26,7 +26,7 @@ def run_pruner(pruner, ratio):
     return pruned_model, time.perf_counter() - start
 
 
-def evaluate(model, loader, cfg, device, inference_time_before, mapping, label):
+def evaluate(model, loader, cfg, device, inference_time_before, mapping, label, is_pruned=True):
     """
     Run inference + accuracy measurement.
 
@@ -44,7 +44,7 @@ def evaluate(model, loader, cfg, device, inference_time_before, mapping, label):
         cfg.dataset.num_classes,
         all_classes=True,
         print_results=True,
-        selected_classes=cfg.selected_classes.copy() if cfg.replace_last_layer else None,
+        selected_classes=cfg.selected_classes.copy() if (cfg.replace_last_layer and is_pruned) else None,
         with_onnx=cfg.inference_with_onnx,
         mapping=mapping
     )
@@ -96,22 +96,14 @@ def train(
         correct = 0
         total = 0
         for inputs, labels in train_loader:
-            #print(f"%%%%% LABELS: {labels}", flush=True)
             inputs, labels = inputs.to(device), labels.to(device)
-            #print(f"+++++ GPU memory after loading inputs and labels to device: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
             optimizer.zero_grad()
             outputs = model(inputs)
-            #print(f"+++++ GPU memory after calculating outputs: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             loss = criterion(outputs, labels)
-            #print(f"+++++ GPU memory after calculating loss: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             loss.backward()
-            #print(f"+++++ GPU memory after backwards step: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             optimizer.step()
-            #print(f"+++++ GPU memory after optimizer step: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
-            # Track loss and accuracy
             running_loss += loss.item()
-            #print(f"+++++ GPU memory after adding running loss: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
             _, predicted = outputs.max(1)
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()

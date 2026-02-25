@@ -12,9 +12,9 @@ def get_limited_samples_dataloader(dataloader, samples_per_class, num_classes):
     Extract a subset of dataloader with limited samples per class.
 
     Args:
-        dataloader: Original DataLoader
-        samples_per_class: Number of samples to keep per class (e.g., 20)
-        num_classes: Number of classes in the dataset
+        dataloader (DataLoader): Original DataLoader
+        samples_per_class (int): Number of samples to keep per class
+        num_classes (int): Number of classes in the dataset
 
     Returns:
         New DataLoader with limited samples per class
@@ -53,9 +53,15 @@ def get_limited_samples_dataloader(dataloader, samples_per_class, num_classes):
 
 
 class RemappedSubset(Dataset):
-    """Wrapper that remaps labels to consecutive indices."""
-
     def __init__(self, dataset, indices, original_classes):
+        """
+        Wrapper class that remaps labels to consecutive indices (e.g., [204, 042, 059] --> [0, 1, 2]).
+
+        Args:
+            dataset (Dataset): Dataset whose labels need to be remapped.
+            indices (List[int]): Selected indices for remapping.
+            original_classes (List[int]): List of original classes for tracking back remapped labels.
+        """
         self.dataset = dataset
         self.indices = indices
         # Create mapping from original class indices to new consecutive indices
@@ -63,9 +69,11 @@ class RemappedSubset(Dataset):
         print(f"Label remapping: {self.label_map}", flush=True)
 
     def __len__(self):
+        """Returns the number of samples in the subset."""
         return len(self.indices)
 
     def __getitem__(self, idx):
+        """Retrieves a sample from the subset and returns it with its remapped label."""
         data, original_label = self.dataset[self.indices[idx]]
         # Remap the label to consecutive index
         new_label = self.label_map[original_label]
@@ -73,7 +81,6 @@ class RemappedSubset(Dataset):
 
 
 class DataLoaderFactory:
-
     def __init__(self,
                  train_batch_size: int,
                  test_batch_size: int,
@@ -81,12 +88,28 @@ class DataLoaderFactory:
                  download: bool = True,
                  train_shuffle: bool = True,
                  selected_classes: List[int] = [],
-                 num_pruning_samples: int = 512,
+                 num_pruning_samples: int = None,
                  use_imagenet_labels: bool | None = False,
                  subsample_ratio: float = None,
                  subsample_size_per_class: int = None,
-                 val_split: float = 0.1,  # New parameter for validation split
+                 val_split: float = 0.1,
                  ):
+        """
+        Factory for creating DataLoader objects.
+
+        Args:
+            train_batch_size (int): Batch size of the train set.
+            test_batch_size (int): Batch size of the test set.
+            use_data_augmentation (boolean): True if we want to use data augmentation
+            download (boolean): True if we want to download the necessary dataset files.
+            train_shuffle (boolean): True if we want to shuffle the training set.
+            selected_classes (List[int]): List of selected classes for remapped labels.
+            num_pruning_samples (int): Samples for a limited dataloder (e.g., for OCAP).
+            use_imagenet_labels (boolean): Use labels of ImageNet, mainly used for ImageNette remapping.
+            subsample_ratio (float): Ratio of samples per class to use from original dataset.
+            subsample_size_per_class (int): Absolute number of samples per class to use.
+            val_split (float): Ratio of train set to be used for validation.
+        """
         self.train_batch_size = train_batch_size
         self.test_batch_size = test_batch_size
         self.use_data_Augmentation = use_data_augmentation
@@ -97,7 +120,7 @@ class DataLoaderFactory:
         self.use_imagenet_labels = use_imagenet_labels
         self.subsample_ratio = subsample_ratio
         self.subsample_size_per_class = subsample_size_per_class
-        self.val_split = val_split  # Store validation split ratio
+        self.val_split = val_split
         print(f"SAMPLING: subsample_ratio={subsample_ratio}, subsample_size_per_class={subsample_size_per_class}")
 
         self._initialize_datasets()
@@ -106,6 +129,7 @@ class DataLoaderFactory:
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     def get_dataloaders(self):
+        """Returns train, val and test split."""
         train_data_loader = DataLoader(
             self.train_data_set, batch_size=self.train_batch_size, shuffle=self.train_shuffle
         )
@@ -122,15 +146,15 @@ class DataLoaderFactory:
 
 
     def get_subset_dataloaders(self):
+        """Returns train, val and test split with subsets of the data (e.g., for ImageNet)."""
         indices_train, indices_val, indices_test = self._get_selected_indices()
-        #print(f"***** GOT INDICES: {indices_train} ***** and ***** {indices_test}")
 
-        # Use RemappedSubset instead of Subset
+        # Remap indices
         subset_dataset_train = RemappedSubset(self.train_data_set, indices_train, self.selected_classes)
         subset_dataset_val = RemappedSubset(self.val_data_set, indices_val, self.selected_classes)
         subset_dataset_test = RemappedSubset(self.test_data_set, indices_test, self.selected_classes)
-        #print(f"***** CREATED SUBSET DATASETS: {subset_dataset_train} ***** and ***** {subset_dataset_test}")
 
+        # Create dataloaders with subsets of the whole data
         subset_train_data_loader = DataLoader(
             subset_dataset_train,
             batch_size=self.train_batch_size,
@@ -155,17 +179,35 @@ class DataLoaderFactory:
                 num_classes=len(self.selected_classes)
             )
 
-        #print(f"***** CREATED SUBSET DATALOADERS: {subset_train_data_loader} ***** and ***** {subset_test_data_loader}")
-
         return subset_train_data_loader, subset_val_data_loader, subset_test_data_loader, pruning_dataloader
+
+    def _split_train_val(self, indices):
+        """
+        Shuffle indices and split into train/val according to val_split.
+
+        Args:
+            indices (List[int]): List of the indices to be split.
+
+        Returns:
+            Tuple(List[int], List[int], List[int]): Indices for train and val, respectively.
+        """
+        random.seed(42)
+        random.shuffle(indices)
+        val_size = int(len(indices) * self.val_split)
+        val_indices = indices[:val_size]
+        train_indices = indices[val_size:]
+        return train_indices, val_indices
 
 
 class Imagenet_Dataloader_Factory(DataLoaderFactory):
-
     def __init__(self, **kwargs):
+        """Factory for creating ImageNet dataloaders."""
         super().__init__(**kwargs)
 
     def _initialize_datasets(self):
+        """
+        Initializes dataset by applying the necessary transformations and subsets.
+        """
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
 
@@ -193,60 +235,44 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
             transform=test_transform
         )
 
+        # Always store full datasets
+        self._full_train_dataset = full_train_dataset
+        self._full_test_dataset = full_test_dataset
 
-        # Apply subsampling if specified
+        # Determine train/test indices
         if self.subsample_size_per_class is not None or self.subsample_ratio is not None:
-            train_indices = self._get_subsample_indices(full_train_dataset, is_train=True)
-            test_indices = self._get_subsample_indices(full_test_dataset, is_train=False)
-
-            # Split train indices into train and val
-            random.seed(42)
-            random.shuffle(train_indices)
-            val_size = int(len(train_indices) * self.val_split)
-            val_indices = train_indices[:val_size]
-            train_indices = train_indices[val_size:]
-
-            self.train_data_set = Subset(full_train_dataset, train_indices)
-            self.val_data_set = Subset(full_train_dataset, val_indices)
-            self.test_data_set = Subset(full_test_dataset, test_indices)
-
-            # Store the full dataset for accessing targets later
-            self._full_train_dataset = full_train_dataset
-            self._full_test_dataset = full_test_dataset
-
-            self._train_subsample_indices = train_indices
-            self._val_subsample_indices = val_indices
-            self._test_subsample_indices = test_indices
+            train_indices = self._get_subsample_indices(full_train_dataset)
+            test_indices = self._get_subsample_indices(full_test_dataset)
         else:
-            # Split train dataset into train and val
-            all_train_indices = list(range(len(full_train_dataset)))
-            random.seed(42)
-            random.shuffle(all_train_indices)
-            val_size = int(len(all_train_indices) * self.val_split)
-            val_indices = all_train_indices[:val_size]
-            train_indices = all_train_indices[val_size:]
+            train_indices = list(range(len(full_train_dataset)))
+            test_indices = None
 
-            self.train_data_set = Subset(full_train_dataset, train_indices)
-            self.val_data_set = Subset(full_train_dataset, val_indices)
-            self.test_data_set = full_test_dataset
+        # Split train into train/val
+        train_indices, val_indices = self._split_train_val(train_indices)
 
-            self._full_train_dataset = full_train_dataset
-            self._full_test_dataset = full_test_dataset
+        # Create dataset splits
+        self.train_data_set = Subset(full_train_dataset, train_indices)
+        self.val_data_set = Subset(full_train_dataset, val_indices)
+        self.test_data_set = (
+            Subset(full_test_dataset, test_indices)
+            if test_indices is not None
+            else full_test_dataset
+        )
 
-            self._train_subsample_indices = train_indices
-            self._val_subsample_indices = val_indices
-            self._test_subsample_indices = None
+        # Store indices for later access
+        self._train_subsample_indices = train_indices
+        self._val_subsample_indices = val_indices
+        self._test_subsample_indices = test_indices
 
-    def _get_subsample_indices(self, dataset, is_train=True):
+    def _get_subsample_indices(self, dataset):
         """
         Get indices for subsampling the dataset.
 
         Args:
-            dataset: The full ImageFolder dataset
-            is_train: Whether this is the training set (for logging)
+            dataset (Dataset): The full dataset.
 
         Returns:
-            List of indices to keep
+            List of subsampled indices to keep.
         """
         # Group indices by class
         class_to_indices = defaultdict(list)
@@ -254,7 +280,7 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
             class_to_indices[label].append(idx)
 
         selected_indices = []
-        random.seed(42)  # For reproducibility
+        random.seed(42)
 
         for class_label, indices in class_to_indices.items():
             # Shuffle indices for this class
@@ -280,71 +306,65 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
 
     def _get_selected_indices(self):
         """
-        Get indices for the selected classes (used for pruning experiments).
-        This should work whether or not subsampling is enabled.
+        Get indices for the selected classes.
+        Works for full dataset and subsampled dataset.
+
+        Returns:
+            Tuple[List[int], List[int], List[int]]:
+                Indices for train, val and test split.
         """
-        if self._train_subsample_indices is not None and self._test_subsample_indices is not None:
-            # We're working with a subsampled dataset
-            # Need to get targets from the full dataset using subsample indices
-            train_labels = [self._full_train_dataset.targets[i] for i in self._train_subsample_indices]
-            val_labels = [self._full_train_dataset.targets[i] for i in self._val_subsample_indices]
-            test_labels = [self._full_test_dataset.targets[i] for i in self._test_subsample_indices]
 
-            # Find indices within the subsampled dataset that match selected_classes
-            indices_train = [
-                i for i, label in enumerate(train_labels)
-                if label in self.selected_classes
-            ]
-            indices_val = [
-                i for i, label in enumerate(val_labels)
-                if label in self.selected_classes
-            ]
-            indices_test = [
-                i for i, label in enumerate(test_labels)
-                if label in self.selected_classes
-            ]
-        elif self._train_subsample_indices is not None:
-            # Working with train/val split from full dataset, but full test set
-            train_labels = [self._full_train_dataset.targets[i] for i in self._train_subsample_indices]
-            val_labels = [self._full_train_dataset.targets[i] for i in self._val_subsample_indices]
+        selected = set(self.selected_classes)
 
-            indices_train = [
-                i for i, label in enumerate(train_labels)
-                if label in self.selected_classes
-            ]
-            indices_val = [
-                i for i, label in enumerate(val_labels)
-                if label in self.selected_classes
-            ]
-            indices_test = [
-                i
-                for i, label in enumerate(self.test_data_set.targets)
-                if label in self.selected_classes
-            ]
+        def extract_labels(dataset, subset_indices=None):
+            """
+            Extract labels from a dataset.
+            If subset_indices is provided, labels are taken from the full dataset
+            using those indices (for subsampled case).
+            """
+            if subset_indices is None:
+                return dataset.targets
+            return [dataset.targets[i] for i in subset_indices]
+
+        def filter_indices(labels):
+            """Return positions whose label is in selected classes."""
+            return [i for i, label in enumerate(labels) if label in selected]
+
+        # ---- TRAIN / VAL LABEL SOURCES ----
+        if self._train_subsample_indices is not None:
+            train_labels = extract_labels(
+                self._full_train_dataset,
+                self._train_subsample_indices,
+            )
+            val_labels = extract_labels(
+                self._full_train_dataset,
+                self._val_subsample_indices,
+            )
         else:
-            # Working with full dataset (shouldn't reach here based on new logic)
-            indices_train = [
-                i
-                for i, label in enumerate(self.train_data_set.targets)
-                if label in self.selected_classes
-            ]
-            indices_val = [
-                i
-                for i, label in enumerate(self.val_data_set.targets)
-                if label in self.selected_classes
-            ]
-            indices_test = [
-                i
-                for i, label in enumerate(self.test_data_set.targets)
-                if label in self.selected_classes
-            ]
+            train_labels = extract_labels(self.train_data_set)
+            val_labels = extract_labels(self.val_data_set)
 
-        random.seed(42)
-        random.shuffle(indices_train)
-        random.shuffle(indices_val)
-        random.shuffle(indices_test)
+        # ---- TEST LABEL SOURCE ----
+        if self._test_subsample_indices is not None:
+            test_labels = extract_labels(
+                self._full_test_dataset,
+                self._test_subsample_indices,
+            )
+        else:
+            test_labels = extract_labels(self.test_data_set)
 
-        print(f"Selected indices for pruning:")
+        # ---- FILTER ----
+        indices_train = filter_indices(train_labels)
+        indices_val = filter_indices(val_labels)
+        indices_test = filter_indices(test_labels)
+
+        # ---- SHUFFLE (deterministic) ----
+        rng = random.Random(42)
+        rng.shuffle(indices_train)
+        rng.shuffle(indices_val)
+        rng.shuffle(indices_test)
+
+        print("Selected indices for pruning:")
         print(f"  Train: {len(indices_train)} samples from selected classes {self.selected_classes}")
         print(f"  Val: {len(indices_val)} samples from selected classes {self.selected_classes}")
         print(f"  Test: {len(indices_test)} samples from selected classes {self.selected_classes}")
@@ -353,8 +373,8 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
 
 
 class CIFAR10_DataLoaderFactory(DataLoaderFactory):
-
     def __init__(self, **kwargs):
+        """Factory for creating CIFAR10 dataloaders."""
         super().__init__(**kwargs)
 
     def _initialize_datasets(self):
@@ -401,8 +421,8 @@ class CIFAR10_DataLoaderFactory(DataLoaderFactory):
 
 
 class Imagenette_DataLoaderFactory(DataLoaderFactory):
-
     def __init__(self, **kwargs):
+        """Factory for creating ImageNette dataloaders."""
         super().__init__(**kwargs)
 
     def _initialize_datasets(self):
@@ -451,9 +471,9 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
 
 
 
-class GTSRB_DataLoaderFactory(DataLoaderFactory):   # TODO: Val dataset
-
+class GTSRB_DataLoaderFactory(DataLoaderFactory):
     def __init__(self, **kwargs):
+        """Factory for creating GTSRB dataloaders."""
         super().__init__(**kwargs)
 
     def _initialize_datasets(self):
