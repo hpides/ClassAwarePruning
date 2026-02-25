@@ -122,8 +122,8 @@ class KnowledgeDistillation:
 
         Args:
             dataloader (DataLoader): Iterable for yielding the batches of images and labels for evaluation.
-            print_results (boolean): Print results to consol.
-            all_classes (boolean): TODO: what does all_classes do again?
+            print_results (boolean): Print results to console.
+            all_classes (boolean): If false, only compute and return the overall accuracy and ignore per-class info.
 
         Returns:
             Tuple: Overall accuracy and accuracies per class

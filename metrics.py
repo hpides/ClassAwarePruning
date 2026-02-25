@@ -21,7 +21,20 @@ def calculate_model_accuracy(
     num_classes: int = 10,
     selected_classes: list = None,
 ):
-    """Function to evaluate the model."""
+    """
+    Evaluates the model's accuracy.
+
+    Args:
+        model (nn.Module): The model to use.
+        device (torch.device): Device to run on.
+        test_loader (DataLoader): The dataloader to use.
+        print_results (boolean): Print results to console.
+        all_classes (boolean): If false, only compute and return the overall accuracy and ignore per-class info.
+        selected_classes (List[int]): List of selected classes to prune for.
+
+    Returns:
+        Tuple(float, List[float]): The overall accuracy and the accuracies per class
+    """
     model.eval()
     correct = 0
     total = 0
@@ -119,6 +132,25 @@ def measure_inference_time_and_accuracy(
         with_onnx=False,
         mapping=None
 ):
+    """
+    Measures the accuracy and the batch inference time of a model.
+
+    Args:
+        data_loader (DataLoader): The dataloader to use.
+        model (nn.Module): The model to use.
+        device (torch.device): Device to run on.
+        batch_size (int): The batch size to use for inference.
+        num_classes (int): The number of classes in the dataset.
+        all_classes (boolean): If false, only compute and return the overall accuracy and ignore per-class info.
+        print_results (boolean): Print results to console.
+        selected_classes (List[int]): List of selected classes to prune for.
+        with_onnx (boolean): Whether to use ONNX.
+        mapping (dict): Mapping for the indices on a subset.
+
+    Returns:
+        Tuple(float, List[float], float, List[float]): The overall accuracy
+         and the accuracies per class + The mean time for inference and individual times per batch
+    """
     model.eval()
     correct = 0
     total = 0
@@ -233,46 +265,9 @@ def measure_inference_time_and_accuracy(
 
 
 def measure_execution_time(selector, model):
+    """Measures execution time a pruning method needs for selecting the indices."""
     start = time.perf_counter()
     indices = selector.select(model)
     elapsed_time = time.perf_counter() - start
     print("%%%%% Execution time:", elapsed_time)
     return indices, elapsed_time
-
-
-def measure_inference_time(data_loader: DataLoader, model: nn.Module, device: str, batch_size: int):
-    model.eval()
-    times = []
-    C, W, H = data_loader.dataset.__getitem__(0)[0].shape
-    torch.cuda.empty_cache() if device.type == "cuda" else None
-    warmup_data = torch.randn(batch_size, C, H, W).to(device)
-    with torch.no_grad():
-        for _ in range(10):
-            _ = model(warmup_data)
-
-    for _ in range(10):
-        if device.type == "mps":
-            start_time = time.time()
-            torch.mps.synchronize() 
-            _ = model(warmup_data)
-            torch.mps.synchronize() 
-            end_time = time.time()
-            times.append((end_time - start_time)*1000)  # Convert to ms
-        else:
-            with profile(
-                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], acc_events=True
-            ) as prof:
-                with record_function("model_inference"):
-                    torch.cuda.synchronize() if device.type == "cuda" else None
-                    _ = model(warmup_data)
-                    torch.cuda.synchronize() if device.type == "cuda" else None
-            for event in prof.key_averages():
-                if event.key == "model_inference":
-                    if device.type == "cuda":
-                        times.append(event.device_time_total / 1000)  # Convert to ms
-                    else:
-                        times.append(event.cpu_time_total / 1000)  # Convert to ms
-            
-
-    inference_time = statistics.mean(times) if times else 0     
-    return inference_time, times

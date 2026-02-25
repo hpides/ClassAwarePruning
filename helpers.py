@@ -11,10 +11,14 @@ from metrics import calculate_model_accuracy, measure_inference_time_and_accurac
 
 def run_pruner(pruner, ratio):
     """
-    Prune if ratio > 0, otherwise just replace the last layer.
+    Prunes if ratio > 0, otherwise just replaces the last layer.
+
+    Args:
+        pruner (Pruner): The pruner in question.
+        ratio (float): Ratio to prune (0.0 to 1.0)
 
     Returns:
-        Tuple: Pruned model and time needed for filter removal.
+        Tuple(nn.Module, float): Pruned model and time needed for filter removal.
     """
     start = time.perf_counter()
     if ratio > 0:
@@ -28,12 +32,20 @@ def run_pruner(pruner, ratio):
 
 def evaluate(model, loader, cfg, device, inference_time_before, mapping, label, is_pruned=True):
     """
-    Run inference + accuracy measurement.
+    Run inference + accuracy measurement for evaluation.
 
     Args:
+        model (nn.Module): The model to run inference on.
+        loader (DataLoader): DataLoader for inference.
+        cfg (DictConfig): Config for the current run.
+        device (torch.device): Device to run inference on.
+        inference_time_before (float): Inference time of the base run.
+        mapping (dict): Mapping for the indices on a subset.
+        label (str): Label of the current run.
+        is_pruned (boolean): Whether we are dealing with the base model or a pruned model.
 
     Returns:
-        Tuple: Accuracy, Inference time, Ratio of inference time.
+        Tuple(float, float, float): Accuracy, Inference time, Ratio of inference time compared to base run.
     """
     print(f"\n%%%%%% {'=' * 80}")
     print(f"%%%%%% {label}:")
@@ -71,6 +83,26 @@ def train(
         patience=5,
         min_delta=0.1
 ):
+    """
+     Run training.
+
+     Args:
+         cfg (DictConfig): Config for the current run.
+         model (nn.Module): The model to train.
+         train_loader (DataLoader): DataLoader for training.
+         val_loader (DataLoader): DataLoader for validation.
+         device (torch.device): Device to run inference on.
+         scheduler (lr_scheduler): Learning rate scheduler to adjust the optimizer’s learning rate during training.
+         num_epochs (int): Numer of epochs to train at max.
+         log_results (boolean): Whether to log results in WandB.
+         num_classes (int): Number of classes in the dataset.
+         retrain (boolean): Whether to retrain the model.
+         patience (int): Number of consecutive epochs needed without improvement for early stopping.
+         min_delta (float): The threshold for when an epoch is classified as "without improvement".
+
+     Returns:
+         Tuple(float, int): Best accuracy and epoch said accuracy occurred.
+     """
     criterion = nn.CrossEntropyLoss()
     optimizer = get_optimizer(
         cfg.training.optimizer, model, cfg.training.lr if not retrain else cfg.training.lr_retrain,
@@ -156,6 +188,18 @@ def train(
 
 
 def get_optimizer(name: str, model: nn.Module, lr: float, weight_decay: float = 0.0):
+    """
+    Returns a requested optimizer.
+
+    Args:
+        name (str): The name of the requested optimizer.
+        model (nn.Module): The model to be optimized.
+        lr (float): The learning rate for the optimizer.
+        weight_decay (float): The weight decay for the optimizer.
+
+    Returns:
+        torch.optim: The requested optimizer.
+    """
     if name == "adam":
         return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     elif name == "adamw":
@@ -192,6 +236,7 @@ def get_names_of_conv_layers(model: nn.Module):
 
 
 def get_pruning_indices(masks):
+    """Get indices of all filters to be pruned."""
     pruning_indices = {}
     for name, mask in masks.items():
         prune_indices = mask.logical_not().nonzero(as_tuple=False).squeeze(1)
@@ -200,6 +245,14 @@ def get_pruning_indices(masks):
 
 
 def filter_pruning_indices_for_resnet(all_indices: dict, model_name: str):
+    """
+    Skip connections in ResNet-18 pose challenges for structured
+    pruning, as they directly add a block’s input to its output,
+    potentially leading to dimensional mismatches. To address
+    this, we refrain from pruning the last convolutional layers in
+    blocks with residual connections, thereby ensuring that the
+    output dimensions match the input.
+    """
     if model_name == "resnet152":
         save_layer = "conv3"
     else:
@@ -217,14 +270,13 @@ def filter_pruning_indices_for_resnet(all_indices: dict, model_name: str):
 
 def get_unstructured_sparsity(model: nn.Module) -> Dict[str, float]:
     """
-    Calculate actual sparsity (fraction of zero weights) in the model.
-    Useful for verifying unstructured pruning.
+    Calculate actual sparsity (fraction of zero weights) in the model for unstructured pruning methods.
 
     Args:
-        model: The pruned model
+        model (nn.Module): The pruned model
 
     Returns:
-        Dictionary with layer-wise and global sparsity metrics
+        Dict(str -> float): Dictionary with layer-wise and global sparsity metrics
     """
     sparsity_info = {}
     total_weights = 0
