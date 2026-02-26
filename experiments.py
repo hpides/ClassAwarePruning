@@ -782,10 +782,10 @@ def main():
         """
         Examples:
           # Preview experiments
-          python launch_experiments.py --experiment 1
+          python experiments.py --experiment 1
         
           # Execute experiments
-          python launch_experiments.py --experiment 1 --execute
+          python experiments.py --experiment 1 --execute
         """
     )
 
