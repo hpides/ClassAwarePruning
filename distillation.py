@@ -11,7 +11,7 @@ class KnowledgeDistillation:
             teacher_model,
             student_model,
             selected_classes=None,
-            device='cuda' if torch.cuda.is_available() else 'cpu',
+            device="cuda" if torch.cuda.is_available() else "cpu",
             temperature=3.0,
             alpha=0.7,
             lr=1e-3
@@ -56,11 +56,7 @@ class KnowledgeDistillation:
         teacher_soft = F.softmax(teacher_logits / self.temperature, dim=1)
 
         # KL divergence
-        kd_loss = F.kl_div(
-            student_soft,
-            teacher_soft,
-            reduction='batchmean'
-        ) * (self.temperature ** 2)
+        kd_loss = F.kl_div(student_soft, teacher_soft, reduction="batchmean") * (self.temperature ** 2)
 
         return kd_loss
 
@@ -79,7 +75,7 @@ class KnowledgeDistillation:
         correct = 0
         total = 0
 
-        pbar = tqdm(dataloader, desc='Training')
+        pbar = tqdm(dataloader, desc="Training")
         for images, labels in pbar:
             images, labels = images.to(self.device), labels.to(self.device)
 
@@ -109,8 +105,8 @@ class KnowledgeDistillation:
             correct += predicted.eq(labels).sum().item()
 
             pbar.set_postfix({
-                'loss': f'{loss.item():.4f}',
-                'acc': f'{100. * correct / total:.2f}%'
+                "loss": f"{loss.item():.4f}",
+                "acc": f"{100. * correct / total:.2f}%"
             })
 
         return total_loss / len(dataloader), 100. * correct / total
@@ -136,7 +132,7 @@ class KnowledgeDistillation:
         class_correct = [0] * num_classes
         class_total = [0] * num_classes
 
-        for images, labels in tqdm(dataloader, desc='Evaluating'):
+        for images, labels in tqdm(dataloader, desc="Evaluating"):
             images, labels = images.to(self.device), labels.to(self.device)
             outputs = self.student(images)
             _, predicted = outputs.max(1)
@@ -154,7 +150,7 @@ class KnowledgeDistillation:
         accuracy = 100. * correct / total
 
         if print_results:
-            print(f"Accuracy of the model on the test set: {accuracy:.2f}%")
+            print(f"%%%%% Accuracy of the model on the test set: {accuracy:.2f}%")
 
         class_accuracies = {}
         if all_classes and print_results:
@@ -186,21 +182,21 @@ class KnowledgeDistillation:
         epochs_without_improvement = 0
 
         print("=" * 60)
-        print(f"Starting knowledge distillation for {epochs} epochs")
-        print(f"Train batches per epoch: {len(train_loader)}")
-        print(f"Train samples: {len(train_loader.dataset)}")
+        print(f"%%%%% Starting knowledge distillation for {epochs} epochs")
+        print(f"%%%%% Train batches per epoch: {len(train_loader)}")
+        print(f"%%%%% Train samples: {len(train_loader.dataset)}")
         if val_loader:
-            print(f"Val samples: {len(val_loader.dataset)}")
+            print(f"%%%%% Val samples: {len(val_loader.dataset)}")
         print("=" * 60)
 
         for epoch in range(epochs):
-            print(f'\nEpoch {epoch + 1}/{epochs}')
+            print(f"\n%%%%% Epoch {epoch + 1}/{epochs}")
             train_loss, train_acc = self.train_epoch(train_loader)
-            print(f'***** Epoch {epoch + 1}/{epochs}, Loss: {train_loss:.4f}, Train Accuracy: {train_acc:.2f}', end='')
+            print(f"%%%%%  Epoch {epoch + 1}/{epochs}, Loss: {train_loss:.4f}, Train Accuracy: {train_acc:.2f}")
 
             if val_loader:
                 val_acc, _ = self.evaluate(val_loader, print_results=False, all_classes=False)
-                print(f', Val Accuracy: {val_acc:.2f}')
+                print(f", Val Accuracy: {val_acc:.2f}")
 
                 if log_results:
                     try:
@@ -221,7 +217,7 @@ class KnowledgeDistillation:
                     epochs_without_improvement = 0
                     if (epoch + 1) >= 10:
                         print(f"%%%%%% Saving model with improved accuracy: {val_acc:.2f}%")
-                        torch.save(self.student.state_dict(), 'best_student.pth')
+                        torch.save(self.student.state_dict(), "best_student.pth")
                 else:
                     # No significant improvement
                     epochs_without_improvement += 1

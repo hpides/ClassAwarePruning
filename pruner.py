@@ -23,7 +23,7 @@ class StructuredPruner:
         Args:
             model (nn.Module): The model to prune.
             masks (dict): Mapping from qualified names of Conv2d layers to filter masks.
-                          Example: {'conv1': tensor([1, 0, 1, ...])}
+                          Example: {"conv1": tensor([1, 0, 1, ...])}
 
         Usage:
             mask = torch.tensor([1] * 128 + [0] * 128, dtype=torch.bool)
@@ -223,10 +223,15 @@ class DepGraphPruner:
         device="cpu",
     ):
         """
+        Dependency-graph-based structured channel pruner.
+
         Args:
             model (nn.Module): The model to prune.
-            masks (dict): Mapping from qualified names of Conv2d layers to filter masks.
-                          Example: {'conv1': tensor([1, 0, 1, ...])}
+            indices (dict): Mapping of module names to channel indices to prune.
+            replace_last_layer (bool): Whether to adapt the final classification
+                layer to `selected_classes` after pruning.
+            selected_classes (list[int]): Indices of classes to keep.
+            device (str or torch.device): Device to use.
         """
         self.model = copy.deepcopy(model)
         self.pruning_indices = indices
@@ -241,7 +246,6 @@ class DepGraphPruner:
             self.model, example_inputs=torch.randn(1, 3, 224, 224).to(self.device)
         )
         print(f"%%%%%% DEPENDENCY GRAPH: {DG}")
-        #print(f"%%%%%% PRUNING INDICES: {self.pruning_indices}")
         print(f"%%%%%% SELECTED CLASSES: {self.selected_classes}")
 
         for name, indices in self.pruning_indices.items():
@@ -253,12 +257,6 @@ class DepGraphPruner:
                 idxs=indices,
             )
 
-            #print(f"%%%%%% GROUP: {group}")
-            #print(f"%%%%%% NAME AND INDICES: {name}, {indices}")
-
-            #if len(indices) >= module.out_channels * 0.95:
-            #    print(f"##### WARNING: Attempting to prune {len(indices)}/{module.out_channels} channels - reducing")
-            #    indices = indices[:int(module.out_channels * 0.9)]
             if DG.check_pruning_group(group):  # avoid over-pruning, i.e., channels=0.
                 group.prune()
             else:
@@ -269,7 +267,6 @@ class DepGraphPruner:
                 idxs=indices,
                 )
                 group.prune()
-        #print(f"%%%%%% MODEL AFTER PRUNING BUT BEFORE LAST LAYER SWAP: {self.model}")
 
         if self.replace_last_layer and self.selected_classes:
             self._replace_last_layer()
@@ -278,10 +275,6 @@ class DepGraphPruner:
 
     def _replace_last_layer(self):
         layer_name, last_linear = list(self.model.named_modules())[-1]
-        #print(f"%%%%%% LAYER NAME: {layer_name}")
-        #print(f"%%%%%% LAST LINEAR LAYER: {last_linear}")
-        #print(f"%%%%%% IN FEATURES: {last_linear.in_features}")
-        #print(f"%%%%%% OUT FEATURES: {len(self.selected_classes)}")
         new_linear = nn.Linear(
             in_features=last_linear.in_features,
             out_features=len(self.selected_classes),
@@ -302,8 +295,8 @@ class DepGraphPruner:
 
 
 class ZeroInsertion(nn.Module):
-
     def __init__(self, indices: torch.Tensor, out_features: int) -> None:
+        """Expands pruned feature map back to original feature map by inserting zeros at the removed positions."""
         super().__init__()
         self.register_buffer("indices", indices)
         self.out_features = out_features
@@ -327,11 +320,9 @@ class ZeroInsertion(nn.Module):
 class UnstructuredMagnitudePruner:
     """
     Applies magnitude-based global unstructured pruning to a model.
-
     Prunes weights globally across specified layers based on their absolute magnitude,
-    zeroing out the smallest weights while preserving the sparsity pattern.
+    zeroing out the smallest weights.
     """
-
     def __init__(
             self,
             model: nn.Module,
@@ -347,10 +338,10 @@ class UnstructuredMagnitudePruner:
             model: The model to prune
             sparsity: Global sparsity ratio (0.0 to 1.0). E.g., 0.5 = prune 50% of weights
             layer_types: Tuple of layer types to prune (default: Conv2d and Linear)
-            exclude_layers: List of layer names to exclude from pruning (e.g., ['classifier'])
+            exclude_layers: List of layer names to exclude from pruning (e.g., ["classifier"])
             replace_last_layer: Whether to replace the final classification layer
             selected_classes: List of target class indices for class-aware pruning
-            device: Device to run on (auto-detected if None)
+            device: Device to run on
         """
         self.model = copy.deepcopy(model)
         self.sparsity = sparsity
@@ -359,7 +350,6 @@ class UnstructuredMagnitudePruner:
         self.replace_last_layer = replace_last_layer
         self.selected_classes = selected_classes or []
 
-        # Auto-detect device
         if device is None:
             self.device = next(model.parameters()).device
         else:
@@ -370,7 +360,7 @@ class UnstructuredMagnitudePruner:
         Apply global magnitude-based unstructured pruning to the model.
 
         Returns:
-            Pruned model with weights zeroed and last layer replaced (if specified)
+            Pruned model with weights zeroed and last layer replaced (if specified).
         """
         self.model.to(self.device)
 
@@ -384,10 +374,10 @@ class UnstructuredMagnitudePruner:
 
             # Check if module is a prunable layer type
             if isinstance(module, self.layer_types):
-                parameters_to_prune.append((module, 'weight'))
+                parameters_to_prune.append((module, "weight"))
 
         if not parameters_to_prune:
-            print("Warning: No parameters found to prune")
+            print("##### Warning: No parameters found to prune")
             return self.model
 
         # Perform global magnitude-based pruning
@@ -404,15 +394,14 @@ class UnstructuredMagnitudePruner:
 
     def _make_permanent(self):
         """
-        Permanently apply pruning masks: bake zeros into weights,
-        then remove masks and hooks to restore original model size.
+        Permanently apply pruning masks: bake zeros into weights, then remove masks/hooks to restore original size.
         """
         for name, module in self.model.named_modules():
-            mask_name = 'weight_mask'
+            mask_name = "weight_mask"
             if hasattr(module, mask_name):
                 # Mask is already applied to weight.data, so just clean up
                 # Remove the hook
-                if hasattr(module, '_pruning_hook_handle'):
+                if hasattr(module, "_pruning_hook_handle"):
                     module._pruning_hook_handle.remove()
                     del module._pruning_hook_handle
 
@@ -422,11 +411,7 @@ class UnstructuredMagnitudePruner:
         return self.model
 
     def _global_unstructured_pruning(self, parameters_to_prune: List[Tuple[nn.Module, str]]):
-        """
-        Apply global magnitude-based pruning across all specified parameters.
-
-        This is optimized for GPU execution and follows PyTorch's global_unstructured approach.
-        """
+        """Apply global magnitude-based pruning across all specified parameters."""
         # Gather all weights into a single tensor for efficient threshold computation
         all_weights = []
         weight_shapes = []
@@ -436,7 +421,7 @@ class UnstructuredMagnitudePruner:
             all_weights.append(weight.data.abs().flatten())
             weight_shapes.append(weight.shape)
 
-        # Concatenate all weights on GPU for fast processing
+        # Concatenate all weights
         all_weights_tensor = torch.cat(all_weights)
 
         # Calculate the threshold based on global sparsity
@@ -444,10 +429,10 @@ class UnstructuredMagnitudePruner:
         num_to_prune = int(self.sparsity * num_weights)
 
         if num_to_prune == 0:
-            print("Warning: Sparsity too low, no weights pruned")
+            print("##### Warning: Sparsity too low, no weights pruned")
             return
 
-        # Use kthvalue for efficient threshold finding (GPU-accelerated)
+        # Threshold finding
         threshold = torch.kthvalue(all_weights_tensor, num_to_prune)[0]
 
         # Apply masks to each parameter
@@ -461,17 +446,17 @@ class UnstructuredMagnitudePruner:
             weight.data.mul_(mask)
 
             # Register mask as a buffer to persist it
-            module.register_buffer(f'{param_name}_mask', mask)
+            module.register_buffer(f"{param_name}_mask", mask)
 
             # Register forward pre-hook to maintain sparsity during training
             self._register_pruning_hook(module, param_name)
 
     def _register_pruning_hook(self, module: nn.Module, param_name: str):
         """Register a forward pre-hook to maintain pruning mask."""
-        mask_name = f'{param_name}_mask'
+        mask_name = f"{param_name}_mask"
 
         # Remove existing hook if present
-        if hasattr(module, '_pruning_hook_handle'):
+        if hasattr(module, "_pruning_hook_handle"):
             module._pruning_hook_handle.remove()
 
         def pruning_hook(mod, input):
@@ -495,7 +480,7 @@ class UnstructuredMagnitudePruner:
                 last_linear_name = name
 
         if last_linear is None:
-            print("Warning: No Linear layer found, skipping last layer replacement")
+            print("##### Warning: No Linear layer found, skipping last layer replacement")
             return
 
         # Create new linear layer with selected classes

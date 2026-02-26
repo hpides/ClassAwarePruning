@@ -47,9 +47,9 @@ def evaluate(model, loader, cfg, device, inference_time_before, mapping, label, 
     Returns:
         Tuple(float, float, float): Accuracy, Inference time, Ratio of inference time compared to base run.
     """
-    print(f"\n%%%%%% {'=' * 80}")
+    print(f"\n%%%%%% {"=" * 80}")
     print(f"%%%%%% {label}:")
-    print(f"%%%%%% {'=' * 80}\n")
+    print(f"%%%%%% {"=" * 80}\n")
     _, class_accuracies, inference_time, _ = measure_inference_time_and_accuracy(
         loader, model, device,
         cfg.training.batch_size_test,
@@ -62,10 +62,10 @@ def evaluate(model, loader, cfg, device, inference_time_before, mapping, label, 
     )
     accuracy = calculate_accuracy_for_selected_classes(class_accuracies, cfg.selected_classes)
     ratio = (inference_time / inference_time_before) if inference_time_before > 0 else 0
-    print(f"\n%%%%%% {'=' * 80}")
+    print(f"\n%%%%%% {"=" * 80}")
     print(f"%%%%% STATS FOR {label}:")
     print(f"%%%%% ACCURACY: {accuracy}, INFERENCE: {inference_time:.2f}, INFERENCE TIME RATIO: {ratio}")
-    print(f"%%%%%% {'=' * 80}\n")
+    print(f"%%%%%% {"=" * 80}\n")
     return accuracy, inference_time, ratio
 
 
@@ -114,14 +114,13 @@ def train(
     best_epoch = 1
     epochs_without_improvement = 0
 
-    print("=" * 60)
-    print(f"Starting training for {num_epochs} epochs")
-    print(f"Train batches per epoch: {len(train_loader)}")
-    print(f"Train samples: {len(train_loader.dataset)}")
-    print(f"Val samples: {len(val_loader.dataset)}")
-    #print(f"Model architecture:\n{model}")
-    print("=" * 60)
-    print(f"+++++ GPU memory right before first epoch: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+    print("%%%%% " + "=" * 60)
+    print(f"%%%%% Starting training for {num_epochs} epochs")
+    print(f"%%%%% Train batches per epoch: {len(train_loader)}")
+    print(f"%%%%% Train samples: {len(train_loader.dataset)}")
+    print(f"%%%%% Val samples: {len(val_loader.dataset)}")
+    print("%%%%% " + "=" * 60)
+    print(f"%%%%% GPU memory right before first epoch: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
@@ -209,7 +208,7 @@ def get_optimizer(name: str, model: nn.Module, lr: float, weight_decay: float = 
             model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay
         )
     else:
-        raise ValueError(f"Unsupported optimizer: {name}")
+        raise ValueError(f"xxxxx Unsupported optimizer: {name}")
 
 
 def get_activation_function(name: str):
@@ -223,7 +222,7 @@ def get_activation_function(name: str):
     elif name == "tanh":
         return nn.Tanh()
     else:
-        raise ValueError(f"Unsupported activation function: {name}")
+        raise ValueError(f"xxxxx Unsupported activation function: {name}")
 
 
 def get_names_of_conv_layers(model: nn.Module):
@@ -294,6 +293,6 @@ def get_unstructured_sparsity(model: nn.Module) -> Dict[str, float]:
             total_weights += num_weights
             total_zero += num_zero
 
-    sparsity_info['global'] = total_zero / total_weights if total_weights > 0 else 0
+    sparsity_info["global"] = total_zero / total_weights if total_weights > 0 else 0
 
     return sparsity_info

@@ -849,7 +849,7 @@ def main():
 
 
     if args.experiment not in experiments:
-        print(f"xxxxx Error: Unknown example {args.experiment}")
+        print(f"xxxxx Error: Unknown experiment: {args.experiment}")
         sys.exit(1)
 
     # Setup experiments

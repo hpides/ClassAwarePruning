@@ -121,12 +121,10 @@ class DataLoaderFactory:
         self.subsample_ratio = subsample_ratio
         self.subsample_size_per_class = subsample_size_per_class
         self.val_split = val_split
-        print(f"SAMPLING: subsample_ratio={subsample_ratio}, subsample_size_per_class={subsample_size_per_class}")
-
         self._initialize_datasets()
 
     def _initialize_datasets(self):
-        raise NotImplementedError("This method should be implemented by subclasses.")
+        raise NotImplementedError("xxxxx This method should be implemented by subclasses.")
 
     def get_dataloaders(self):
         """Returns train, val and test split."""
@@ -142,7 +140,7 @@ class DataLoaderFactory:
         return train_data_loader, val_data_loader, test_data_loader
 
     def _get_selected_indices(self):
-        raise NotImplementedError("This method should be implemented by subclasses.")
+        raise NotImplementedError("xxxxx This method should be implemented by subclasses.")
 
 
     def get_subset_dataloaders(self):
@@ -199,7 +197,11 @@ class DataLoaderFactory:
         return train_indices, val_indices
 
 
-class Imagenet_Dataloader_Factory(DataLoaderFactory):
+###################################
+# ----------- IMAGENET ---------- #
+###################################
+
+class ImagenetDataloaderFactory(DataLoaderFactory):
     def __init__(self, **kwargs):
         """Factory for creating ImageNet dataloaders."""
         super().__init__(**kwargs)
@@ -313,7 +315,6 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
             Tuple[List[int], List[int], List[int]]:
                 Indices for train, val and test split.
         """
-
         selected = set(self.selected_classes)
 
         def extract_labels(dataset, subset_indices=None):
@@ -330,7 +331,7 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
             """Return positions whose label is in selected classes."""
             return [i for i, label in enumerate(labels) if label in selected]
 
-        # ---- TRAIN / VAL LABEL SOURCES ----
+        # Train / Val label sources
         if self._train_subsample_indices is not None:
             train_labels = extract_labels(
                 self._full_train_dataset,
@@ -344,7 +345,7 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
             train_labels = extract_labels(self.train_data_set)
             val_labels = extract_labels(self.val_data_set)
 
-        # ---- TEST LABEL SOURCE ----
+        # Test label sources
         if self._test_subsample_indices is not None:
             test_labels = extract_labels(
                 self._full_test_dataset,
@@ -353,26 +354,29 @@ class Imagenet_Dataloader_Factory(DataLoaderFactory):
         else:
             test_labels = extract_labels(self.test_data_set)
 
-        # ---- FILTER ----
+        # Filter all indices
         indices_train = filter_indices(train_labels)
         indices_val = filter_indices(val_labels)
         indices_test = filter_indices(test_labels)
 
-        # ---- SHUFFLE (deterministic) ----
         rng = random.Random(42)
         rng.shuffle(indices_train)
         rng.shuffle(indices_val)
         rng.shuffle(indices_test)
 
-        print("Selected indices for pruning:")
-        print(f"  Train: {len(indices_train)} samples from selected classes {self.selected_classes}")
-        print(f"  Val: {len(indices_val)} samples from selected classes {self.selected_classes}")
-        print(f"  Test: {len(indices_test)} samples from selected classes {self.selected_classes}")
+        print("%%%%% Selected indices for pruning:")
+        print(f"%%%%%  Train: {len(indices_train)} samples from selected classes {self.selected_classes}")
+        print(f"%%%%%  Val: {len(indices_val)} samples from selected classes {self.selected_classes}")
+        print(f"%%%%%  Test: {len(indices_test)} samples from selected classes {self.selected_classes}")
 
         return indices_train, indices_val, indices_test
 
 
-class CIFAR10_DataLoaderFactory(DataLoaderFactory):
+###################################
+# ------- FURTHER DATASETS ------ #
+###################################
+
+class CIFAR10DataLoaderFactory(DataLoaderFactory):
     def __init__(self, **kwargs):
         """Factory for creating CIFAR10 dataloaders."""
         super().__init__(**kwargs)
@@ -406,7 +410,6 @@ class CIFAR10_DataLoaderFactory(DataLoaderFactory):
         )
 
     def _get_selected_indices(self):
-        print(f"Selected classes are: {self.selected_classes}")
         indices_train = [
             i
             for i, label in enumerate(self.train_data_set.targets)
@@ -420,7 +423,7 @@ class CIFAR10_DataLoaderFactory(DataLoaderFactory):
         return indices_train, indices_test
 
 
-class Imagenette_DataLoaderFactory(DataLoaderFactory):
+class ImagenetteDataLoaderFactory(DataLoaderFactory):
     def __init__(self, **kwargs):
         """Factory for creating ImageNette dataloaders."""
         super().__init__(**kwargs)
@@ -471,7 +474,7 @@ class Imagenette_DataLoaderFactory(DataLoaderFactory):
 
 
 
-class GTSRB_DataLoaderFactory(DataLoaderFactory):
+class GTSRBDataLoaderFactory(DataLoaderFactory):
     def __init__(self, **kwargs):
         """Factory for creating GTSRB dataloaders."""
         super().__init__(**kwargs)
@@ -523,8 +526,8 @@ class GTSRB_DataLoaderFactory(DataLoaderFactory):
 
 
 dataloaderFactories = {
-    "imagenet": Imagenet_Dataloader_Factory,
-    "cifar10": CIFAR10_DataLoaderFactory,
-    "imagenette": Imagenette_DataLoaderFactory,
-    "gtsrb": GTSRB_DataLoaderFactory,
+    "imagenet": ImagenetDataloaderFactory,
+    "cifar10": CIFAR10DataLoaderFactory,
+    "imagenette": ImagenetteDataLoaderFactory,
+    "gtsrb": GTSRBDataLoaderFactory,
 }

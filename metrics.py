@@ -9,7 +9,6 @@ from statistics import mean
 import onnxruntime as ort
 import numpy as np
 import io
-import statistics
 
 
 def calculate_model_accuracy(
@@ -62,7 +61,7 @@ def calculate_model_accuracy(
     accuracy = 100 * correct / total
 
     if print_results:
-        print(f"Accuracy of the model on the test set: {accuracy:.2f}%")
+        print(f"%%%%% Accuracy of the model on the test set: {accuracy:.2f}%")
 
     class_accuracies = {}
     if all_classes and print_results:
@@ -113,7 +112,7 @@ def export_model_to_onnx(model: nn.Module, input_shape: tuple, device: str):
         do_constant_folding=True,
         input_names=["input"],
         output_names=["output"],
-        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}}
     )
 
     onnx_model = f.getvalue()

@@ -3,13 +3,15 @@ from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet50_Weights, ResNet152_Weights, VGG16_Weights, MobileNet_V2_Weights
 
 def replace_module(model, module_name, new_module):
-        parts = module_name.split(".")
-        parent = model
-        for name in parts[:-1]:
-            parent = getattr(parent, name)
-        setattr(parent, parts[-1], new_module)
+    """Replace a module with a new one"""
+    parts = module_name.split(".")
+    parent = model
+    for name in parts[:-1]:
+        parent = getattr(parent, name)
+    setattr(parent, parts[-1], new_module)
 
 def replace_last_layer_for_imagenette(model):
+    """Replace 1000-class ImageNet classifier with a 10-class Imagenette head"""
     imagenette_classes = [0, 217, 482, 491, 497, 566, 569, 571, 574, 701]
     name, last_linear = list(model.named_modules())[-1]
     new_linear = nn.Linear(

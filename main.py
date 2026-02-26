@@ -23,10 +23,6 @@ from helpers import (
 )
 
 
-###################################
-# ------------- MAIN ------------ #
-###################################
-
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: DictConfig):
     # Hardware initialization
@@ -204,7 +200,7 @@ def main(cfg: DictConfig):
 
     print(f"%%%%%% GPU memory before starting evaluation: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
-    # ----- BEFORE PRUNING (BASE) -----
+    # ----- BEFORE PRUNING (BASE MODEL) -----
     accuracy_before, inference_time_before, _ = evaluate(
         model, subset_data_loader_test, cfg, device, 0, mapping, label="Before pruning", is_pruned=False
     )
@@ -295,10 +291,10 @@ def main(cfg: DictConfig):
 
     if cfg.pruning.name.startswith("unstructured_"):
         sparsity_info = get_unstructured_sparsity(pruned_model)
-        print(f"%%%%%% Actual global sparsity: {sparsity_info['global']:.4f}")
+        print(f"%%%%%% Actual global sparsity: {sparsity_info["global"]:.4f}")
         if cfg.log_results:
             wandb.log({
-                "actual_sparsity": sparsity_info['global'],
+                "actual_sparsity": sparsity_info["global"],
                 "layer_sparsity": sparsity_info
             })
     if cfg.log_results:
