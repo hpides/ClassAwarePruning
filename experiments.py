@@ -47,7 +47,7 @@ def evenly_spaced_prefixes(num_samples, total_classes=1000):
     E.g., for five classes it would return [0, 249, 499, 749, 999].
 
     Args:
-        num_samples (int): Number of samples you need from the dataset.
+        num_samples (List[int]): List of number of samples you need from the dataset.
         total_classes (int): How many classes are in the dataset in total, default 1000 for ImageNet.
 
     Returns:
@@ -311,6 +311,7 @@ def experiment_unstructured_distinct(launcher: ExperimentLauncher):
         param_grid={
             "pruning": ["unstructured_magnitude"],
             "model": ["vgg16", "resnet18"],
+            "selected_classes": [distinct_classes],
             "selected_classes": [distinct_classes],
             "pruning.pruning_ratio": [0.0, 0.33, 0.67, 0.9, 0.95, 0.97, 0.99],
         },
